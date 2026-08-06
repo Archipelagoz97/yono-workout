@@ -60,6 +60,62 @@ const EQUIPMENT_OPTIONS = [
 
 type GenerationState = "idle" | "loading" | "success" | "error" | "offline";
 
+function LoadingLogs({ sessions }: { sessions: WorkoutSession[] | undefined }) {
+  const [logs, setLogs] = useState<string[]>([]);
+  
+  useEffect(() => {
+    const baseLogs = ["Mengaktifkan Yono AI..."];
+    if (sessions && sessions.length > 0) {
+      baseLogs.push(`Menganalisis ${sessions.length} riwayat latihan terakhir...`);
+      sessions.forEach(s => {
+        const dateStr = s.completedAt ? new Date(s.completedAt).toLocaleDateString() : 'Baru-baru ini';
+        baseLogs.push(`>> Membaca rekam jejak: ${s.name} (${dateStr})`);
+      });
+      baseLogs.push("Menghitung rasio repetisi & beban (Progressive Overload)...");
+      baseLogs.push("Menyesuaikan dengan energi hari ini...");
+    } else {
+      baseLogs.push("Membangun fondasi program awal...");
+    }
+    baseLogs.push("Menyelaraskan dengan alat di gym...");
+    baseLogs.push("Finalisasi racikan AI...");
+
+    let i = 0;
+    const interval = setInterval(() => {
+      if (i < baseLogs.length) {
+        setLogs(prev => {
+          const newLogs = [...prev, baseLogs[i]];
+          // keep only last 5 lines to prevent overflow
+          return newLogs.slice(-5);
+        });
+        i++;
+      }
+    }, 700); 
+    return () => clearInterval(interval);
+  }, [sessions]);
+
+  return (
+    <div className="w-full max-w-[300px] h-28 mt-6 overflow-hidden bg-black/60 backdrop-blur-md rounded-2xl p-4 shadow-inner border border-white/10 flex flex-col justify-end">
+      <div className="flex flex-col gap-1.5 justify-end font-mono text-[11px] text-green-400">
+        {logs.map((l, i) => (
+          <motion.div 
+            key={`${i}-${l}`} 
+            initial={{ opacity: 0, x: -10 }} 
+            animate={{ opacity: 1, x: 0 }}
+            className="truncate"
+          >
+            {l}
+          </motion.div>
+        ))}
+        {logs.length < 8 && (
+          <motion.div animate={{ opacity: [1, 0] }} transition={{ repeat: Infinity, duration: 0.8 }} className="h-4">
+            █
+          </motion.div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function TodayPage() {
   const router = useRouter();
   const [selectedFocus, setSelectedFocus] = useState<string | null>(null);
@@ -538,17 +594,19 @@ export default function TodayPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/95 backdrop-blur-xl"
           >
-            <div className="w-64 h-64 relative mb-4">
+            <div className="w-48 h-48 relative mb-6">
               <YonoAnimation state="thinking" />
             </div>
-            <h2 className="text-2xl font-display font-bold text-foreground animate-pulse mb-2">
+            <h2 className="text-2xl font-extrabold text-foreground animate-pulse mb-2 text-center px-4">
               Meracik Latihan...
             </h2>
-            <p className="text-muted-foreground text-center px-8">
+            <p className="text-muted-foreground text-center px-8 text-sm max-w-[300px]">
               Yono sedang menyusun program terbaik berdasarkan kemampuan dan riwayatmu.
             </p>
+            
+            <LoadingLogs sessions={recentSessions} />
           </motion.div>
         )}
       </AnimatePresence>
