@@ -17,15 +17,16 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
- * Format a weight for display. Converts to lbs if needed.
+ * Format a weight for display.
  */
 export function formatWeight(
-  kg: number,
-  unit: "kg" | "lb" = "kg",
-  decimals = 1
+  kg: number | null | undefined,
+  unit: "kg" = "kg",
+  includeUnit = true
 ): string {
-  const value = unit === "lb" ? kg * 2.20462 : kg;
-  return `${parseFloat(value.toFixed(decimals))} ${unit}`;
+  if (kg == null) return includeUnit ? "BW" : "0";
+  const formatted = kg % 1 === 0 ? kg.toString() : kg.toFixed(1);
+  return includeUnit ? `${formatted} kg` : formatted;
 }
 
 /**

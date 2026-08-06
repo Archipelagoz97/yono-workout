@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { YonoAnimation } from "@/components/yono/YonoAnimation";
 import { ExerciseDetailsDialog } from "@/components/workout/ExerciseDetailsDialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { getCopy } from "@/data/yono-copy";
 import db from "@/db/database";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -511,71 +512,74 @@ export default function TodayPage() {
         </div>
       )}
 
-      {/* Generate button */}
-      <div className="px-4 mb-6">
+      {/* Generate Button */}
+      <div className="px-4 mb-6 mt-4 flex gap-2">
         <Button
           id="btn-generate-workout"
           onClick={handleGenerate}
-          disabled={generationState === "loading"}
-          className="w-full h-14 text-base font-semibold rounded-2xl shadow-md"
+          disabled={generationState === "loading" || !selectedFocus || !gym}
+          className="flex-1 h-14 rounded-2xl font-bold shadow-sm"
           size="lg"
         >
-          {generationState === "loading" ? (
-            <>
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                className="w-5 h-5 mr-2"
-              >
-                <RefreshCwIcon className="w-5 h-5" />
-              </motion.div>
-              Building your workout...
-            </>
-          ) : (
-            <>
-              <ZapIcon className="w-5 h-5 mr-2" />
-              Generate workout
-            </>
-          )}
+          <ZapIcon className="w-5 h-5 mr-2" />
+          Generate workout
         </Button>
       </div>
 
-      {/* Workout suggestion */}
+      {/* Fullscreen AI Loading */}
       <AnimatePresence>
-      {suggestion && (generationState === "success" || generationState === "offline") ? (
-          <WorkoutSuggestionCard
-            suggestion={suggestion as {
-              sessionName: string;
-              reason: string;
-              estimatedMinutes: number;
-              exercises: Array<{
-                exerciseId: string;
-                order: number;
-                targetSets: number;
-                targetRepMin?: number;
-                targetRepMax?: number;
-                suggestedWeightKg?: number;
-                restSeconds: number;
-                notes?: string;
-              }>;
-              isOffline?: boolean;
-            }}
-            onStart={handleStartWorkout}
-            onRegenerate={handleGenerate}
-            onReplaceExercise={(oldId, newId) => {
-              setSuggestion((prev: any) => {
-                if (!prev) return prev;
-                return {
-                  ...prev,
-                  exercises: prev.exercises.map((e: any) => 
-                    e.exerciseId === oldId ? { ...e, exerciseId: newId } : e
-                  )
-                };
-              });
-            }}
-          />
-        ) : null}
+        {generationState === "loading" && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm"
+          >
+            <div className="w-64 h-64 relative mb-4">
+              <YonoAnimation state="thinking" />
+            </div>
+            <h2 className="text-2xl font-display font-bold text-foreground animate-pulse mb-2">
+              Meracik Latihan...
+            </h2>
+            <p className="text-muted-foreground text-center px-8">
+              Yono sedang menyusun program terbaik berdasarkan kemampuan dan riwayatmu.
+            </p>
+          </motion.div>
+        )}
       </AnimatePresence>
+
+      {/* Workout suggestion Modal */}
+      <Dialog 
+        open={!!suggestion && (generationState === "success" || generationState === "offline")} 
+        onOpenChange={(open) => {
+          if (!open) {
+            // we don't strictly need to clear it, but we can just close the modal
+            setSuggestion(null);
+            setGenerationState("idle");
+          }
+        }}
+      >
+        <DialogContent className="max-w-sm p-0 bg-transparent border-none shadow-none">
+          {suggestion ? (
+            <WorkoutSuggestionCard
+              suggestion={suggestion as any}
+              onStart={handleStartWorkout}
+              onRegenerate={handleGenerate}
+              onReplaceExercise={(oldId, newId) => {
+                setSuggestion((prev: any) => {
+                  if (!prev) return prev;
+                  return {
+                    ...prev,
+                    exercises: prev.exercises.map((e: any) => 
+                      e.exerciseId === oldId ? { ...e, exerciseId: newId } : e
+                    )
+                  };
+                });
+              }}
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* Recent workouts */}
       {recentSessions && recentSessions.length > 0 && (

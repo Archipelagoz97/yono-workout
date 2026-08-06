@@ -7,7 +7,7 @@ export interface Profile {
   displayName: string;
   goal?: string;
   experienceLevel?: "beginner" | "intermediate" | "advanced";
-  preferredWeightUnit: "kg" | "lb";
+  preferredWeightUnit: "kg";
   preferredDistanceUnit: "km" | "mi";
   yonoPersonality: "quiet" | "balanced" | "playful";
   createdAt: number;

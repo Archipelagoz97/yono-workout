@@ -269,13 +269,22 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
 
   const config = armConfig[family] ?? armConfig.generic_machine;
 
+  const isSquat = family === "squat";
   return (
     <motion.g
       animate={{
-        y: [0, -4, 0, -4, 0],
+        y: isSquat ? [0, 15, 0, 15, 0] : [0, -4, 0, -4, 0],
       }}
-      transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+      transition={{ duration: isSquat ? 2.5 : 1.5, repeat: Infinity, ease: "easeInOut" }}
     >
+      {isSquat && (
+        <g>
+          {/* Barbell behind neck */}
+          <rect x="10" y="42" width="100" height="4" fill="#94a3b8" />
+          <circle cx="10" cy="44" r="6" fill="#64748b" />
+          <circle cx="110" cy="44" r="6" fill="#64748b" />
+        </g>
+      )}
       <YonoBase
         expression="focused"
         earAngle={config.earAngle}

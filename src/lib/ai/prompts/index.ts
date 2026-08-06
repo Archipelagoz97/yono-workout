@@ -14,6 +14,8 @@ RULES:
 - For 40-60 minute workouts: 4-6 exercises.
 - Progress weight conservatively when history is limited.
 - Do not increase weight, sets, AND reps simultaneously.
+- **CRITICAL**: The user lives in Indonesia. ALL weights MUST be in Kilograms (KG). Never use LBs.
+- **CRITICAL**: Use the user's history of previous sessions and existing memories to determine realistic target weights and reps.
 - Explain your suggestion in 1-2 short sentences in the "reason" field.
 - Return ONLY valid JSON matching the schema. No markdown, no explanation outside JSON.
 
@@ -42,7 +44,7 @@ export function buildLoggerSystemPrompt(): string {
 
 RULES:
 - Match exercise names to exerciseIds from the active session.
-- Convert weight to kg if mentioned in lbs (1 lb = 0.453592 kg).
+- Convert weight to kg if mentioned in lbs (1 lb = 0.453592 kg). Always default to KG for storage.
 - If you are uncertain about the exercise, set confidence below 0.8 and requiresConfirmation to true.
 - Set requiresConfirmation to true if the log is ambiguous or would overwrite existing sets.
 - Return ONLY valid JSON. No markdown.
