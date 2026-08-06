@@ -42,7 +42,7 @@ export function BottomNav() {
               id={`nav-${label.toLowerCase()}`}
               className={cn(
                 "flex-1 flex flex-col items-center justify-center gap-0.5 relative",
-                "touch-target transition-colors",
+                "touch-target transition-colors active:scale-95",
                 isActive
                   ? "text-primary"
                   : "text-muted-foreground hover:text-foreground"

@@ -466,10 +466,11 @@ export default function TodayPage() {
         </div>
         <div className="flex gap-2.5 overflow-x-auto pb-2 snap-x hide-scrollbar">
           {FOCUS_OPTIONS.map((opt) => (
-            <motion.button
-              key={opt.id}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setSelectedFocus(opt.id === selectedFocus ? null : opt.id)}
+              <motion.button
+                key={opt.id}
+                whileTap={{ scale: 0.95 }}
+                whileHover={selectedFocus !== opt.id ? { scale: 1.03 } : {}}
+                onClick={() => setSelectedFocus(opt.id === selectedFocus ? null : opt.id)}
               className={`flex-shrink-0 snap-center w-[100px] h-[100px] rounded-3xl p-3.5 flex flex-col justify-between transition-all ${
                 selectedFocus === opt.id
                   ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25 border-transparent"
@@ -677,8 +678,16 @@ export default function TodayPage() {
         <div className="px-4 pb-4">
           <h2 className="text-base font-semibold text-foreground mb-3">Recent workouts</h2>
           <div className="space-y-2">
-            {recentSessions.map((session) => (
-              <RecentSessionCard key={session.id} session={session} />
+            {recentSessions.map((session, idx) => (
+              <motion.div
+                key={session.id}
+                initial={{ opacity: 0, y: 15 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: idx * 0.05, duration: 0.3, ease: "easeOut" }}
+              >
+                <RecentSessionCard session={session} />
+              </motion.div>
             ))}
           </div>
         </div>

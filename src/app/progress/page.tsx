@@ -142,9 +142,9 @@ export default function ProgressPage() {
               return (
                 <motion.div
                   key={exerciseId}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: index * 0.06, type: "spring", stiffness: 300, damping: 20 }}
                 >
                   <Card className="p-4 flex items-center justify-between">
                     <div>
@@ -190,10 +190,17 @@ function StatCard({
   value: string;
 }) {
   return (
-    <Card className="p-4">
-      <div className="flex items-center gap-2 mb-1">{icon}</div>
-      <p className="text-2xl font-display font-bold text-foreground leading-tight">{value}</p>
-      <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
-    </Card>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-40px" }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+    >
+      <Card className="p-4">
+        <div className="flex items-center gap-2 mb-1">{icon}</div>
+        <p className="text-2xl font-display font-bold text-foreground leading-tight">{value}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+      </Card>
+    </motion.div>
   );
 }

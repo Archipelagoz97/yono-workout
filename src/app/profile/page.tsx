@@ -119,7 +119,13 @@ export default function ProfilePage() {
       </div>
 
       {/* Storage & Backup */}
-      <div className="px-4 mb-6">
+      <motion.div
+        className="px-4 mb-6"
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-30px" }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+      >
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
           Data & Backup
         </h2>
@@ -216,10 +222,16 @@ export default function ProfilePage() {
             )}
           </div>
         </Card>
-      </div>
+      </motion.div>
 
       {/* AI Memories */}
-      <div className="px-4 mb-6">
+      <motion.div
+        className="px-4 mb-6"
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-30px" }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+      >
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
           AI Memory
         </h2>
@@ -269,10 +281,16 @@ export default function ProfilePage() {
             </div>
           )}
         </Card>
-      </div>
+      </motion.div>
 
       {/* Preferences */}
-      <div className="px-4 mb-6">
+      <motion.div
+        className="px-4 mb-6"
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-30px" }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+      >
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
           Appearance
         </h2>
@@ -295,10 +313,16 @@ export default function ProfilePage() {
             />
           </div>
         </Card>
-      </div>
+      </motion.div>
 
       {/* Data transparency */}
-      <div className="px-4 mb-6">
+      <motion.div
+        className="px-4 mb-6"
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-30px" }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+      >
         <Card className="p-4 bg-muted/50">
           <div className="flex items-start gap-3">
             <ShieldIcon className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
@@ -309,7 +333,7 @@ export default function ProfilePage() {
             </p>
           </div>
         </Card>
-      </div>
+      </motion.div>
 
       {/* Clear memories dialog */}
       <Dialog open={showClearMemories} onOpenChange={setShowClearMemories}>

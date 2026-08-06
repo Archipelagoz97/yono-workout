@@ -184,9 +184,9 @@ function YonoBase({
 
       {/* Tail */}
       <motion.g
-        animate={{ rotate: tailWag ? [0, 20, -20, 20, -20, 0] : 0 }}
+        animate={{ rotate: tailWag ? [0, 15, 0, -15, 0] : 0 }}
         style={{ transformOrigin: "75px 85px" }}
-        transition={{ duration: 0.8, repeat: tailWag ? Infinity : 0, ease: "easeInOut" }}
+        transition={{ duration: 1.2, repeat: tailWag ? Infinity : 0, ease: "easeInOut" }}
       >
         <path
           d="M75 82 Q88 70 90 55"
@@ -223,8 +223,8 @@ function YonoBase({
 function YonoIdle() {
   return (
     <motion.g
-      animate={{ y: [0, -3, 0] }}
-      transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+      animate={{ y: [0, -6, 0] }}
+      transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
     >
       <YonoBase expression="neutral" tailWag />
     </motion.g>
@@ -303,30 +303,30 @@ function YonoPerforming({
   if (eq === "barbell") {
     eqVisual = (
       <g>
-        <rect x="-40" y="-1" width="80" height="2" fill="#00E5FF" opacity="0.8" />
-        <rect x="-35" y="-10" width="4" height="20" rx="1" fill="#00E5FF" opacity="0.6" />
-        <rect x="31" y="-10" width="4" height="20" rx="1" fill="#00E5FF" opacity="0.6" />
+        <rect x="-40" y="-1" width="80" height="2" fill="#C4905A" opacity="0.8" />
+        <rect x="-35" y="-10" width="4" height="20" rx="1" fill="#C4905A" opacity="0.6" />
+        <rect x="31" y="-10" width="4" height="20" rx="1" fill="#C4905A" opacity="0.6" />
       </g>
     );
   } else if (eq === "dumbbell") {
     eqVisual = (
       <g>
-        <rect x="-10" y="-1" width="20" height="2" fill="#00E5FF" opacity="0.8" />
-        <rect x="-12" y="-6" width="4" height="12" rx="1" fill="#00E5FF" opacity="0.6" />
-        <rect x="8" y="-6" width="4" height="12" rx="1" fill="#00E5FF" opacity="0.6" />
+        <rect x="-10" y="-1" width="20" height="2" fill="#C4905A" opacity="0.8" />
+        <rect x="-12" y="-6" width="4" height="12" rx="1" fill="#C4905A" opacity="0.6" />
+        <rect x="8" y="-6" width="4" height="12" rx="1" fill="#C4905A" opacity="0.6" />
       </g>
     );
   } else if (eq === "cable" || eq === "machine") {
     eqVisual = (
       <g>
-        <circle cx="0" cy="0" r="4" fill="none" stroke="#00E5FF" strokeWidth="1" />
-        <circle cx="0" cy="0" r="1.5" fill="#00E5FF" />
+        <circle cx="0" cy="0" r="4" fill="none" stroke="#C4905A" strokeWidth="1" />
+        <circle cx="0" cy="0" r="1.5" fill="#C4905A" />
       </g>
     );
   }
 
   let propVisual = null;
-  const propStroke = "rgba(0, 229, 255, 0.2)";
+  const propStroke = "rgba(196, 144, 90, 0.2)";
   if (prop === "floor") {
     propVisual = <line x1="-20" y1="105" x2="140" y2="105" stroke={propStroke} strokeWidth="1" strokeDasharray="4 4" />;
   } else if (prop === "bench") {
@@ -351,12 +351,12 @@ function YonoPerforming({
 
   // Holographic Data Grid Background
   const gridVisual = (
-    <g opacity="0.1">
+    <g opacity="0.08">
       {[20, 40, 60, 80, 100].map(y => (
-        <line key={`hy-${y}`} x1="0" y1={y} x2="120" y2={y} stroke="#00E5FF" strokeWidth="0.5" />
+        <line key={`hy-${y}`} x1="0" y1={y} x2="120" y2={y} stroke="#C4905A" strokeWidth="0.5" />
       ))}
       {[20, 40, 60, 80, 100].map(x => (
-        <line key={`hx-${x}`} x1={x} y1="0" x2={x} y2="120" stroke="#00E5FF" strokeWidth="0.5" />
+        <line key={`hx-${x}`} x1={x} y1="0" x2={x} y2="120" stroke="#C4905A" strokeWidth="0.5" />
       ))}
     </g>
   );
@@ -366,19 +366,19 @@ function YonoPerforming({
   const bgDy = -2;
 
   // The main glowing color for the wireframe
-  const holoColor = "#00E5FF";
-  const dimColor = "#0088AA";
+  const holoColor = "#C4905A";
+  const dimColor = "#8B7355";
 
   return (
     <g>
       <defs>
         <filter id="hologlow" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="2" result="blur" />
+          <feGaussianBlur stdDeviation="1.5" result="blur" />
           <feComposite in="SourceGraphic" in2="blur" operator="over" />
         </filter>
         <linearGradient id="neonGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#00E5FF" />
-          <stop offset="100%" stopColor="#B300FF" />
+          <stop offset="0%" stopColor="#C4905A" />
+          <stop offset="100%" stopColor="#F4845F" />
         </linearGradient>
       </defs>
 
@@ -425,9 +425,9 @@ function YonoPerforming({
         />
         
         {/* Core/Pelvis Node */}
-        <motion.circle animate={{ cx: animCoord("p", 0), cy: animCoord("p", 1) }} transition={transitionConfig} r="3" fill="#B300FF" />
+        <motion.circle animate={{ cx: animCoord("p", 0), cy: animCoord("p", 1) }} transition={transitionConfig} r="3" fill="#F4845F" />
         {/* Shoulder Node */}
-        <motion.circle animate={{ cx: animCoord("s", 0), cy: animCoord("s", 1) }} transition={transitionConfig} r="3" fill="#00E5FF" />
+        <motion.circle animate={{ cx: animCoord("s", 0), cy: animCoord("s", 1) }} transition={transitionConfig} r="3" fill="#C4905A" />
 
         {/* FG Leg */}
         <motion.path
@@ -469,7 +469,7 @@ function YonoPerforming({
         {/* Holographic scanning ring around head */}
         <motion.circle 
           cx="0" cy="0" r="18" 
-          fill="none" stroke="#00E5FF" strokeWidth="0.5" strokeDasharray="4 4"
+          fill="none" stroke="#C4905A" strokeWidth="0.5" strokeDasharray="4 4"
           animate={{ rotate: 360, scale: [1, 1.1, 1] }} 
           transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
         />
@@ -511,7 +511,7 @@ function YonoSetComplete() {
 function YonoResting() {
   return (
     <motion.g
-      animate={{ y: [0, -2, 0] }}
+      animate={{ y: [0, -5, 0] }}
       transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
     >
       <YonoBase expression="neutral" tailWag eyeScale={0.7} />

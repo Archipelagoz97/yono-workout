@@ -123,9 +123,10 @@ export default function HistoryPage() {
         {filtered?.map((session, index) => (
           <motion.div
             key={session.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.05 }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true, margin: "-20px" }}
+            transition={{ delay: index * 0.05, type: "spring", stiffness: 300, damping: 25 }}
           >
             <SessionCard
               session={session}

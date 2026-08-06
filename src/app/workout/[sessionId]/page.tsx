@@ -346,7 +346,7 @@ export default function WorkoutPage() {
           <motion.p
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
+            exit={{ opacity: 0, y: -10 }}
             className="text-center text-sm text-muted-foreground px-4 mb-2"
           >
             {savedCopy}
@@ -420,10 +420,22 @@ export default function WorkoutPage() {
                     Skip
                   </button>
                 </div>
-                <Progress
-                  value={restTotal > 0 ? ((restTotal - restRemaining) / restTotal) * 100 : 0}
-                  className="h-1 mt-2"
-                />
+                <div className="relative h-1 mt-2 rounded-full bg-muted overflow-hidden">
+                  <motion.div
+                    className="absolute inset-y-0 left-0 bg-accent rounded-full"
+                    animate={{
+                      width: `${restTotal > 0 ? ((restTotal - restRemaining) / restTotal) * 100 : 0}%`,
+                    }}
+                    transition={{ duration: 1, ease: "linear" }}
+                  />
+                  <motion.div
+                    className="absolute inset-y-0 left-0 bg-accent/30 rounded-full"
+                    initial={{ width: "0%" }}
+                    animate={{ width: "100%" }}
+                    transition={{ duration: restTotal, ease: "linear" }}
+                    key={`ghost-${restTotal}`}
+                  />
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

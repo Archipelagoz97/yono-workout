@@ -254,7 +254,7 @@
     background: linear-gradient(
       90deg,
       var(--muted) 25%,
-      oklch(0.95 0.01 80) 50%,
+      var(--card) 50%,
       var(--muted) 75%
     );
     background-size: 200% 100%;
