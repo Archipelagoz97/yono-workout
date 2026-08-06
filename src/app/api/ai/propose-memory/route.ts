@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callDeepSeekJSON, DeepSeekError } from "@/lib/ai/deepseek";
-import { buildMemorySystemPrompt } from "@/lib/ai/prompts";
+import { buildMemoryExtractorSystemPrompt } from "@/lib/ai/prompts";
 import {
   ProposeMemoryRequestSchema,
-  MemoryExtractionSchema,
+  MemoryProposalSchema,
 } from "@/lib/ai/schemas";
 import { ZodError } from "zod";
 
@@ -39,13 +39,13 @@ export async function POST(req: NextRequest) {
     const extraction = await callDeepSeekJSON(
       {
         messages: [
-          { role: "system", content: buildMemorySystemPrompt() },
+          { role: "system", content: buildMemoryExtractorSystemPrompt() },
           { role: "user", content: userMessage },
         ],
         temperature: 0.2,
         maxTokens: 512,
       },
-      (raw) => MemoryExtractionSchema.parse(raw)
+      (raw) => MemoryProposalSchema.parse(raw)
     );
 
     return NextResponse.json(extraction);
