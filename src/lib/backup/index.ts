@@ -278,11 +278,11 @@ export async function importBackupMerge(backup: YonoBackup): Promise<{
         for (const item of data) {
           const id = (item as { id: string }).id;
           try {
-            const existing = await (table as ReturnType<typeof db.profiles>).get(id);
+            const existing = await (table as any).get(id);
             if (existing) {
               skipped++;
             } else {
-              await (table as ReturnType<typeof db.profiles>).add(item as never);
+              await (table as any).add(item);
               added++;
             }
           } catch {

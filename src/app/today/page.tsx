@@ -541,7 +541,7 @@ export default function TodayPage() {
 
       {/* Workout suggestion */}
       <AnimatePresence>
-        {suggestion && (generationState === "success" || generationState === "offline") && (
+      {suggestion && (generationState === "success" || generationState === "offline") ? (
           <WorkoutSuggestionCard
             suggestion={suggestion as {
               sessionName: string;
@@ -562,7 +562,7 @@ export default function TodayPage() {
             onStart={handleStartWorkout}
             onRegenerate={handleGenerate}
           />
-        )}
+        ) : null}
       </AnimatePresence>
 
       {/* Recent workouts */}

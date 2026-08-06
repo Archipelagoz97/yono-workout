@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     const existingStr =
       data.existingMemories.length > 0
         ? data.existingMemories
-            .map((m) => "- " + m.category + ": " + m.content)
+            .map((m: any) => "- " + m.category + ": " + m.content)
             .join("\n")
         : "None";
 
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     if (error instanceof ZodError) {
       return NextResponse.json(
-        { error: "Invalid request", details: error.errors },
+        { error: "Invalid request", details: (error as any).errors },
         { status: 400 }
       );
     }
