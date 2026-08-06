@@ -357,68 +357,139 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
 
   const { start, end, duration } = getCoords();
 
-  const anim = (joint: keyof JointCoords, axis: 0 | 1) => [start[joint][axis], end[joint][axis], start[joint][axis]];
+  // Helper to generate a single continuous path for 3 joints (e.g. Shoulder -> Elbow -> Wrist)
+  // This allows strokeLinejoin="round" to work perfectly!
+  const getPath = (j1: keyof JointCoords, j2: keyof JointCoords, j3: keyof JointCoords, coords: JointCoords, dx = 0, dy = 0) => {
+    return `M ${coords[j1][0] + dx} ${coords[j1][1] + dy} L ${coords[j2][0] + dx} ${coords[j2][1] + dy} L ${coords[j3][0] + dx} ${coords[j3][1] + dy}`;
+  };
+
+  // Pause physics: start -> end -> pause -> start
+  const transitionConfig = { duration, repeat: Infinity, times: [0, 0.4, 0.6, 1], ease: "easeInOut" as const };
+
+  const animPath = (j1: keyof JointCoords, j2: keyof JointCoords, j3: keyof JointCoords, dx = 0, dy = 0) => [
+    getPath(j1, j2, j3, start, dx, dy),
+    getPath(j1, j2, j3, end, dx, dy),
+    getPath(j1, j2, j3, end, dx, dy),
+    getPath(j1, j2, j3, start, dx, dy)
+  ];
+
+  const animCoord = (joint: keyof JointCoords, axis: 0 | 1, offset = 0) => [
+    start[joint][axis] + offset, 
+    end[joint][axis] + offset, 
+    end[joint][axis] + offset, 
+    start[joint][axis] + offset
+  ];
+
+  // Equipment selection based on family
+  let eqVisual = <circle cx="0" cy="0" r="7" fill="#64748b" />;
+  if (["squat", "horizontal_push", "vertical_push", "hip_hinge", "generic_barbell", "vertical_pull", "rowing_cardio"].includes(family)) {
+    eqVisual = (
+      <g>
+        <rect x="-35" y="-3" width="70" height="6" fill="#94a3b8" rx="3" />
+        <rect x="-30" y="-15" width="8" height="30" rx="2" fill="#475569" />
+        <rect x="22" y="-15" width="8" height="30" rx="2" fill="#475569" />
+      </g>
+    );
+  } else if (["curl", "tricep_extension", "lateral_raise", "generic_dumbbell"].includes(family)) {
+    eqVisual = (
+      <g>
+        <rect x="-10" y="-2" width="20" height="4" fill="#94a3b8" />
+        <rect x="-12" y="-8" width="6" height="16" rx="2" fill="#475569" />
+        <rect x="6" y="-8" width="6" height="16" rx="2" fill="#475569" />
+      </g>
+    );
+  }
+
+  // Background offset for 3D depth
+  const bgDx = 10;
+  const bgDy = -3;
 
   return (
     <g>
-      {/* Equipment (Simple Dumbbell/Barbell visual based on wrist pos) */}
-      <motion.circle
-        animate={{ cx: anim("w", 0), cy: anim("w", 1) }}
-        transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
-        r="6"
-        fill="#94a3b8"
-      />
-
-      {/* Articulated Dog Body */}
+      {/* Background Dog Limbs (Darker Brown) */}
       <g strokeLinecap="round" strokeLinejoin="round">
-        {/* Upper Leg */}
-        <motion.line
-          animate={{ x1: anim("p", 0), y1: anim("p", 1), x2: anim("k", 0), y2: anim("k", 1) }}
-          transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
-          stroke="#C4905A"
+        {/* BG Leg (Hip -> Knee -> Foot) */}
+        <motion.path
+          animate={{ d: animPath("p", "k", "f", bgDx, bgDy) }}
+          transition={transitionConfig}
+          stroke="#A67850"
           strokeWidth="12"
+          fill="none"
         />
-        {/* Lower Leg */}
-        <motion.line
-          animate={{ x1: anim("k", 0), y1: anim("k", 1), x2: anim("f", 0), y2: anim("f", 1) }}
-          transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
-          stroke="#C4905A"
-          strokeWidth="12"
-        />
-        {/* Foot Paw Overlay */}
+        {/* BG Foot Paw */}
         <motion.circle
-          animate={{ cx: anim("f", 0), cy: anim("f", 1) }}
-          transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
+          animate={{ cx: animCoord("f", 0, bgDx), cy: animCoord("f", 1, bgDy) }}
+          transition={transitionConfig}
+          r="6"
+          fill="#D4A57A"
+        />
+        
+        {/* BG Arm (Shoulder -> Elbow -> Wrist) */}
+        <motion.path
+          animate={{ d: animPath("s", "e", "w", bgDx, bgDy) }}
+          transition={transitionConfig}
+          stroke="#A67850"
+          strokeWidth="10"
+          fill="none"
+        />
+        {/* BG Hand Paw */}
+        <motion.circle
+          animate={{ cx: animCoord("w", 0, bgDx), cy: animCoord("w", 1, bgDy) }}
+          transition={transitionConfig}
+          r="5"
+          fill="#D4A57A"
+        />
+      </g>
+
+      {/* Equipment (moves with front wrist) */}
+      <motion.g
+        animate={{ x: animCoord("w", 0), y: animCoord("w", 1) }}
+        transition={transitionConfig}
+      >
+        {eqVisual}
+      </motion.g>
+
+      {/* Foreground Dog Body */}
+      <g strokeLinecap="round" strokeLinejoin="round">
+        {/* Fat Oval Torso */}
+        <motion.line
+          animate={{ 
+            x1: animCoord("s", 0), y1: animCoord("s", 1), 
+            x2: animCoord("p", 0), y2: animCoord("p", 1) 
+          }}
+          transition={transitionConfig}
+          stroke="#D4A57A"
+          strokeWidth="34"
+        />
+        
+        {/* FG Leg (Hip -> Knee -> Foot) */}
+        <motion.path
+          animate={{ d: animPath("p", "k", "f") }}
+          transition={transitionConfig}
+          stroke="#C4905A"
+          strokeWidth="12"
+          fill="none"
+        />
+        {/* FG Foot Paw */}
+        <motion.circle
+          animate={{ cx: animCoord("f", 0), cy: animCoord("f", 1) }}
+          transition={transitionConfig}
           r="6"
           fill="#E8C49A"
         />
         
-        {/* Torso */}
-        <motion.line
-          animate={{ x1: anim("s", 0), y1: anim("s", 1), x2: anim("p", 0), y2: anim("p", 1) }}
-          transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
-          stroke="#D4A57A"
-          strokeWidth="24"
-        />
-        
-        {/* Upper Arm */}
-        <motion.line
-          animate={{ x1: anim("s", 0), y1: anim("s", 1), x2: anim("e", 0), y2: anim("e", 1) }}
-          transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
+        {/* FG Arm (Shoulder -> Elbow -> Wrist) */}
+        <motion.path
+          animate={{ d: animPath("s", "e", "w") }}
+          transition={transitionConfig}
           stroke="#C4905A"
           strokeWidth="10"
+          fill="none"
         />
-        {/* Lower Arm */}
-        <motion.line
-          animate={{ x1: anim("e", 0), y1: anim("e", 1), x2: anim("w", 0), y2: anim("w", 1) }}
-          transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
-          stroke="#C4905A"
-          strokeWidth="10"
-        />
-        {/* Hand Paw Overlay */}
+        {/* FG Hand Paw */}
         <motion.circle
-          animate={{ cx: anim("w", 0), cy: anim("w", 1) }}
-          transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
+          animate={{ cx: animCoord("w", 0), cy: animCoord("w", 1) }}
+          transition={transitionConfig}
           r="5"
           fill="#E8C49A"
         />
@@ -426,8 +497,8 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
 
       {/* Head */}
       <motion.g
-        animate={{ x: anim("h", 0), y: anim("h", 1) }}
-        transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
+        animate={{ x: animCoord("h", 0), y: animCoord("h", 1) }}
+        transition={transitionConfig}
       >
         <YonoHead expression="focused" earAngle={-5} />
       </motion.g>
