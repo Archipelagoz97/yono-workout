@@ -1,6 +1,27 @@
 # Yono Workout — Project Status
 
-## Latest Fix: Residual Mobile Horizontal Overflow (2026-08-06)
+## Latest Feature: Workout Volume Achievement (2026-08-06)
+
+Per-session celebration popup shown on the "Workout Complete" dialog, based on total
+volume lifted (Σ weightKg × reps across all completed sets in the session).
+
+Tiers (ID inside-joke themed):
+| Total volume | Emoji | Label | Copy |
+| --- | --- | --- | --- |
+| < 100 kg | 🎒 | Beban Hidup | "Baru ngangkat beban hidup. Yang penting udah mulai, sisanya nyusul." |
+| ≥ 100 kg | 🦘 | Legacy Arc | "Setara ngangkat Chris pas masih gendut..." |
+| ≥ 250 kg | 🧸 | Trio Tangguh | "Setara ngangkat Okta, Nadhifa, dan Albert sekaligus..." |
+| ≥ 500 kg | 🦏 | Sekawan Lengkap | "Setara ngangkat DD, Reyn, Fio, Vinka, dan Yono sekaligus..." |
+| ≥ 1000 kg | ⛴️ | Kapal Tongkang | "Kamu baru aja ngangkat kapal tongkang!..." |
+
+- Files changed: `src/app/workout/[sessionId]/page.tsx` — added `allSessionSets` live query +
+  `totalVolumeKg` computation, `getVolumeAchievement()` tier helper, achievement block in the
+  complete dialog (emoji, label, copy, total kg shown only when ≥ 100 kg).
+- Verified via Playwright: seeded sessions at 50/100/200/250/500/3000 kg → correct tier shown
+  (3000 kg → Kapal Tongkang; 200 kg → Legacy Arc; boundary rounding caveat: 100/30 kg distrib
+  rounds to 99.9 → Beban Hidup, expected).
+
+## Previous Fix: Residual Mobile Horizontal Overflow (2026-08-06)
 
 ### Root Cause
 `<main>` is a flex item inside the app shell (`flex flex-col lg:flex-row`). By default a flex

@@ -49,6 +49,42 @@ const REST_DEFAULTS: Record<string, number> = {
 
 const SWIPE_THRESHOLD = 50;
 
+function getVolumeAchievement(totalKg: number): { emoji: string; label: string; copy: string } {
+  if (totalKg >= 1000) {
+    return {
+      emoji: "⛴️",
+      label: "Kapal Tongkang",
+      copy: "Kamu baru aja ngangkat kapal tongkang! Ngga ngerti gimana caranya, tapi kita semua bangga.",
+    };
+  }
+  if (totalKg >= 500) {
+    return {
+      emoji: "🦏",
+      label: "Sekawan Lengkap",
+      copy: "Setara ngangkat DD, Reyn, Fio, Vinka, dan Yono sekaligus. Mereka berlima ngga tahu harus bangga atau ketakutan.",
+    };
+  }
+  if (totalKg >= 250) {
+    return {
+      emoji: "🧸",
+      label: "Trio Tangguh",
+      copy: "Setara ngangkat Okta, Nadhifa, dan Albert sekaligus. Gengmu itu beban, literally.",
+    };
+  }
+  if (totalKg >= 100) {
+    return {
+      emoji: "🦘",
+      label: "Legacy Arc",
+      copy: "Setara ngangkat Chris pas masih gendut. Buat yang dulu ngeliat, ini arc redemption terbaik.",
+    };
+  }
+  return {
+    emoji: "🎒",
+    label: "Beban Hidup",
+    copy: "Baru ngangkat beban hidup. Yang penting udah mulai, sisanya nyusul.",
+  };
+}
+
 export default function WorkoutPage() {
   const params = useParams();
   const router = useRouter();
@@ -116,6 +152,19 @@ export default function WorkoutPage() {
         : [],
     [currentSessionExercise?.id]
   );
+
+  const allSessionSets = useLiveQuery(
+    () =>
+      db.workoutSets
+        .where("sessionId")
+        .equals(sessionId)
+        .filter((s) => s.weightKg != null && s.reps != null)
+        .toArray(),
+    [sessionId]
+  );
+
+  const totalVolumeKg =
+    allSessionSets?.reduce((sum, s) => sum + (s.weightKg ?? 0) * (s.reps ?? 0), 0) ?? 0;
 
   const measurementType = exerciseDef?.measurementType;
   const weightUnit = profile?.preferredWeightUnit ?? "kg";
@@ -1178,9 +1227,20 @@ export default function WorkoutPage() {
               <YonoAnimation state="workout_complete" animationFamily="core_hold" />
             </div>
           </div>
-          <DialogDescription className="text-base mb-8">
-            Great job! Your workout has been saved to your history.
-          </DialogDescription>
+          <div className="mb-6 space-y-2">
+            <div className="text-5xl">{getVolumeAchievement(totalVolumeKg).emoji}</div>
+            <p className="font-display text-lg font-bold text-primary">
+              {getVolumeAchievement(totalVolumeKg).label}
+            </p>
+            <DialogDescription className="text-base mx-auto max-w-xs">
+              {getVolumeAchievement(totalVolumeKg).copy}
+            </DialogDescription>
+            {totalVolumeKg >= 100 && (
+              <p className="text-sm text-muted-foreground">
+                {Math.round(totalVolumeKg).toLocaleString("id-ID")} kg diangkat hari ini.
+              </p>
+            )}
+          </div>
           <Button onClick={() => router.push("/today")} className="w-full h-12 text-lg rounded-xl">
             Back to Dashboard
           </Button>
