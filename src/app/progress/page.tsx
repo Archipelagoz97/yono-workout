@@ -1,18 +1,148 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { TrendingUpIcon, ZapIcon, CalendarIcon, TargetIcon } from "lucide-react";
+import {
+  TrendingUpIcon,
+  ZapIcon,
+  CalendarIcon,
+  TargetIcon,
+  MedalIcon,
+  FlameIcon,
+  StarIcon,
+  TrophyIcon,
+  HeartIcon,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useLiveQuery } from "dexie-react-hooks";
 import db from "@/db/database";
 import { estimateOneRepMax, calculateTotalVolume } from "@/lib/progression";
 import { exercises as exerciseCatalog } from "@/data/exercises.compact";
-
+import { kgToDisplay, formatWeight, type WeightUnit } from "@/lib/units";
+import { evaluateAchievements, getAchievementByCode } from "@/lib/achievements";
+import type { WorkoutSet } from "@/types";
 const exerciseMap = new Map(exerciseCatalog.map((e) => [e.id, e]));
 
+const ACHIEVEMENT_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  medal: MedalIcon,
+  flame: FlameIcon,
+  calendar: CalendarIcon,
+  target: TargetIcon,
+  zap: ZapIcon,
+  star: StarIcon,
+  trophy: TrophyIcon,
+  heart: HeartIcon,
+};
+
+interface ExerciseTrend {
+  exerciseId: string;
+  name: string;
+  sessions: Array<{ completedAt: number; bestWeightKg: number; bestReps: number; est1RM: number }>;
+  repPRs: Array<{ reps: number; weightKg: number }>;
+  lastWeightKg?: number;
+  peakWeightKg: number;
+}
+
+// ─────────────────────────────────────────────────────────
+// Lightweight SVG line chart (no external dependencies)
+// ─────────────────────────────────────────────────────────
+function SimpleLineChart({
+  points,
+  unit,
+}: {
+  points: Array<{ completedAt: number; value: number; label: string }>;
+  unit: WeightUnit;
+}) {
+  const W = 320;
+  const H = 130;
+  const PAD_X = 8;
+  const PAD_Y = 16;
+
+  const values = points.map((p) => p.value);
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values);
+  const span = max - min;
+  const yMax = max + span * 0.15;
+  const yMin = Math.max(0, min - span * 0.2);
+
+  const xFor = (i: number) =>
+    points.length === 1
+      ? PAD_X + (W - PAD_X * 2) / 2
+      : PAD_X + (i / (points.length - 1)) * (W - PAD_X * 2);
+  const yFor = (v: number) => H - PAD_Y - ((v - yMin) / (yMax - yMin || 1)) * (H - PAD_Y * 2);
+
+  const linePath = points
+    .map((p, i) => `${i === 0 ? "M" : "L"} ${xFor(i)} ${yFor(p.value).toFixed(1)}`)
+    .join(" ");
+  const areaPath = `${linePath} L ${xFor(points.length - 1)} ${H - PAD_Y} L ${xFor(0)} ${H - PAD_Y} Z`;
+
+  const first = points[0];
+  const last = points[points.length - 1];
+
+  return (
+    <div className="w-full">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full h-auto"
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.25" />
+            <stop offset="100%" stopColor="var(--color-primary)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <path d={areaPath} fill="url(#chartFill)" />
+        <path
+          d={linePath}
+          fill="none"
+          stroke="var(--color-primary)"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {points.map((p, i) => (
+          <circle
+            key={i}
+            cx={xFor(i)}
+            cy={yFor(p.value)}
+            r="3"
+            fill="var(--color-background)"
+            stroke="var(--color-primary)"
+            strokeWidth="2"
+          >
+            <title>{`${p.label}: ${Math.round(p.value * 100) / 100} ${unit}`}</title>
+          </circle>
+        ))}
+      </svg>
+      <div className="flex items-center justify-between mt-1 text-[10px] text-muted-foreground px-1">
+        <span>
+          {new Date(first.completedAt).toLocaleDateString("en", {
+            month: "short",
+            year: "2-digit",
+          })}
+        </span>
+        <span className="font-semibold text-foreground">
+          {Math.round(last.value * 100) / 100} {unit}
+        </span>
+        <span>
+          {new Date(last.completedAt).toLocaleDateString("en", {
+            month: "short",
+            year: "2-digit",
+          })}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function ProgressPage() {
+  const [selectedExerciseId, setSelectedExerciseId] = useState<string | null>(null);
+
+  const profile = useLiveQuery(() => db.profiles.get("main-user"), []);
+  const weightUnit: WeightUnit = profile?.preferredWeightUnit ?? "kg";
+
   const sessions = useLiveQuery(
     () =>
       db.workoutSessions
@@ -23,6 +153,33 @@ export default function ProgressPage() {
   );
 
   const allSets = useLiveQuery(() => db.workoutSets.toArray(), []);
+
+  const achievementUnlocks = useLiveQuery(() => db.achievementUnlocks.toArray(), []);
+
+  // ─────────────────────────────────────────────────────────
+  // Achievement evaluation + persistence
+  // ─────────────────────────────────────────────────────────
+  const achievements = useMemo(() => {
+    if (!sessions || !allSets) return null;
+    const workingSets = allSets.filter((s) => s.setType !== "warmup");
+    const muscleSet = new Set<string>();
+    for (const s of workingSets) {
+      const def = exerciseMap.get(s.exerciseId);
+      if (def) def.primaryMuscles.forEach((m) => muscleSet.add(m));
+    }
+    return evaluateAchievements(sessions, allSets, muscleSet);
+  }, [sessions, allSets]);
+
+  useEffect(() => {
+    if (!achievements || !achievementUnlocks) return;
+    const earnedAt = new Map(achievementUnlocks.map((u) => [u.code, u.earnedAt]));
+    const now = Date.now();
+    for (const a of achievements) {
+      if (a.earned && !earnedAt.has(a.code)) {
+        db.achievementUnlocks.put({ code: a.code, earnedAt: now }).catch(() => {});
+      }
+    }
+  }, [achievements, achievementUnlocks]);
 
   const stats = useMemo(() => {
     if (!sessions || !allSets) return null;
@@ -71,9 +228,89 @@ export default function ProgressPage() {
     };
   }, [sessions, allSets]);
 
+  // Per-exercise trends + rep PRs
+  const trends = useMemo(() => {
+    if (!allSets) return [];
+    const workingSets = allSets.filter(
+      (s) => s.setType !== "warmup" && s.weightKg && s.reps
+    );
+
+    // Group sets into sessions per exercise
+    const byExercise = new Map<string, Map<string, WorkoutSet[]>>();
+    for (const s of workingSets) {
+      let bySession = byExercise.get(s.exerciseId);
+      if (!bySession) {
+        bySession = new Map();
+        byExercise.set(s.exerciseId, bySession);
+      }
+      const list = bySession.get(s.sessionId);
+      if (list) list.push(s);
+      else bySession.set(s.sessionId, [s]);
+    }
+
+    const result: ExerciseTrend[] = [];
+    for (const [exerciseId, bySession] of byExercise) {
+      const sessionPoints: ExerciseTrend["sessions"] = [];
+      for (const [sessionId, sets] of bySession) {
+        // Best set of the session by est 1RM
+        let best: { weightKg: number; reps: number; est1RM: number } | null = null;
+        for (const set of sets) {
+          const est = estimateOneRepMax(set.weightKg!, set.reps!);
+          if (!best || est > best.est1RM) {
+            best = { weightKg: set.weightKg!, reps: set.reps!, est1RM: est };
+          }
+        }
+        if (!best) continue;
+        const completedAt =
+          sessions?.find((s) => s.id === sessionId)?.completedAt ?? 0;
+        sessionPoints.push({
+          completedAt,
+          bestWeightKg: best.weightKg,
+          bestReps: best.reps,
+          est1RM: best.est1RM,
+        });
+      }
+      if (sessionPoints.length === 0) continue;
+      sessionPoints.sort((a, b) => a.completedAt - b.completedAt);
+
+      // Rep PRs: heaviest weight at each rep count
+      const repPRMap = new Map<number, number>();
+      for (const s of workingSets) {
+        if (s.exerciseId !== exerciseId) continue;
+        const cur = repPRMap.get(s.reps!) ?? 0;
+        if (s.weightKg! > cur) repPRMap.set(s.reps!, s.weightKg!);
+      }
+      const repPRs = [...repPRMap.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .filter(([reps]) => reps >= 1 && reps <= 20)
+        .map(([reps, weightKg]) => ({ reps, weightKg }));
+
+      const peakWeightKg = Math.max(...sessionPoints.map((p) => p.bestWeightKg));
+      const def = exerciseMap.get(exerciseId);
+
+      result.push({
+        exerciseId,
+        name: def?.name ?? exerciseId,
+        sessions: sessionPoints,
+        repPRs,
+        lastWeightKg: sessionPoints[sessionPoints.length - 1].bestWeightKg,
+        peakWeightKg,
+      });
+    }
+
+    // Sort by most sessions first
+    result.sort((a, b) => b.sessions.length - a.sessions.length);
+    return result;
+  }, [allSets, sessions]);
+
+  const selectedTrend =
+    (selectedExerciseId &&
+      trends.find((t) => t.exerciseId === selectedExerciseId)) ||
+    trends[0];
+
   if (!stats) {
     return (
-      <div className="min-h-screen yono-gradient content-with-nav">
+      <div className="min-h-dvh yono-gradient content-with-nav">
         <div className="px-4 pt-12">
           <h1 className="text-2xl font-display font-bold">Progress</h1>
         </div>
@@ -87,7 +324,7 @@ export default function ProgressPage() {
   }
 
   return (
-    <div className="min-h-screen yono-gradient content-with-nav">
+    <div className="min-h-dvh yono-gradient content-with-nav">
       {/* Header */}
       <div className="px-4 pt-12 pb-6">
         <h1 className="text-2xl font-display font-bold text-foreground">Progress</h1>
@@ -132,6 +369,166 @@ export default function ProgressPage() {
         </div>
       )}
 
+      {/* Achievements */}
+      {achievements && (
+        <div className="px-4 mb-6">
+          <h2 className="text-base font-semibold text-foreground mb-3">
+            Achievements
+            <span className="text-muted-foreground font-normal text-sm ml-2">
+              {achievements.filter((a) => a.earned).length}/{achievements.length} unlocked
+            </span>
+          </h2>
+          <div className="grid grid-cols-2 gap-3">
+            {achievements.map((a) => {
+              const def = getAchievementByCode(a.code);
+              if (!def) return null;
+              const Icon = ACHIEVEMENT_ICONS[def.icon] ?? MedalIcon;
+              const pct = Math.min(100, Math.round((a.progress.current / a.progress.target) * 100));
+              return (
+                <motion.div
+                  key={a.code}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <Card
+                    className={`p-3 h-full ${
+                      a.earned
+                        ? "bg-primary/5 border-primary/40"
+                        : "opacity-60 border-border"
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <Icon
+                        className={`w-5 h-5 shrink-0 ${
+                          a.earned ? "text-primary" : "text-muted-foreground"
+                        }`}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-foreground leading-tight">
+                          {def.name}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                          {def.description}
+                        </p>
+                      </div>
+                    </div>
+                    {!a.earned && (
+                      <div className="mt-2">
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full bg-primary/50 rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-1 font-mono">
+                          {a.progress.current.toLocaleString()} /{" "}
+                          {a.progress.target.toLocaleString()}
+                        </p>
+                      </div>
+                    )}
+                  </Card>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Exercise progress charts */}
+      {trends.length > 0 && (
+        <div className="px-4 mb-6">
+          <h2 className="text-base font-semibold text-foreground mb-3">
+            Strength over time
+          </h2>
+
+          {/* Exercise selector */}
+          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none mb-3">
+            {trends.map((t) => (
+              <button
+                key={t.exerciseId}
+                onClick={() => setSelectedExerciseId(t.exerciseId)}
+                className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap border transition-all ${
+                  selectedTrend?.exerciseId === t.exerciseId
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-card border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t.name}
+              </button>
+            ))}
+          </div>
+
+          {selectedTrend && (
+            <motion.div
+              key={selectedTrend.exerciseId}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <Card className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="font-semibold text-foreground text-sm">
+                    {selectedTrend.name}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs">
+                      Best {formatWeight(selectedTrend.peakWeightKg, weightUnit)}
+                    </Badge>
+                    <Badge variant="secondary" className="text-xs">
+                      {selectedTrend.sessions.length}{" "}
+                      {selectedTrend.sessions.length === 1 ? "session" : "sessions"}
+                    </Badge>
+                  </div>
+                </div>
+
+                {selectedTrend.sessions.length >= 2 ? (
+                  <SimpleLineChart
+                    unit={weightUnit}
+                    points={selectedTrend.sessions.map((s) => ({
+                      completedAt: s.completedAt,
+                      value: kgToDisplay(s.bestWeightKg, weightUnit),
+                      label: `${new Date(s.completedAt).toLocaleDateString()}: ${kgToDisplay(s.bestWeightKg, weightUnit)} ${weightUnit} × ${s.bestReps}`,
+                    }))}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    Log this exercise in at least 2 workouts to see your progress chart.
+                  </p>
+                )}
+
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Best working set weight per session. Progress is expected to move
+                  gradually.
+                </p>
+              </Card>
+
+              {/* Rep records */}
+              {selectedTrend.repPRs.length > 0 && (
+                <div className="mt-4">
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    Rep records
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedTrend.repPRs.map(({ reps, weightKg }) => (
+                      <span
+                        key={reps}
+                        className="text-xs bg-background border border-border px-2 py-1 rounded-lg font-mono"
+                      >
+                        {formatWeight(weightKg, weightUnit)} × {reps}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground mt-1.5">
+                    Heaviest weight ever lifted at each rep count.
+                  </p>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </div>
+      )}
+
       {/* Personal records */}
       {stats.personalRecords.length > 0 && (
         <div className="px-4 mb-6">
@@ -152,12 +549,14 @@ export default function ProgressPage() {
                         {def?.name ?? exerciseId}
                       </p>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        {pr.weightKg} kg × {pr.reps} reps
+                        {formatWeight(pr.weightKg, weightUnit)} × {pr.reps} reps
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-muted-foreground">Est. 1RM</p>
-                      <p className="font-bold text-primary">{Math.round(pr.est1RM)} kg</p>
+                      <p className="font-bold text-primary">
+                        {Math.round(kgToDisplay(pr.est1RM, weightUnit))} {weightUnit}
+                      </p>
                     </div>
                   </Card>
                 </motion.div>

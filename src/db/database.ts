@@ -13,6 +13,7 @@ import type {
   ChatMessage,
   ChatSummary,
   BackupMetadata,
+  AchievementUnlock,
 } from "@/types";
 
 // ─────────────────────────────────────────────────────────
@@ -35,6 +36,7 @@ export const db = new Dexie("YonoWorkoutDB") as Dexie & {
   chatMessages: EntityTable<ChatMessage, "id">;
   chatSummaries: EntityTable<ChatSummary, "id">;
   backupMetadata: EntityTable<BackupMetadata, "id">;
+  achievementUnlocks: EntityTable<AchievementUnlock, "code">;
 };
 
 db.version(1).stores({
@@ -53,6 +55,11 @@ db.version(1).stores({
   chatMessages: "id, createdAt",
   chatSummaries: "id, updatedAt",
   backupMetadata: "id, updatedAt",
+  achievementUnlocks: "code, earnedAt",
+});
+
+db.version(2).stores({
+  achievementUnlocks: "code, earnedAt",
 });
 
 // ─────────────────────────────────────────────────────────

@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { CalendarIcon, SearchIcon, TrashIcon, DownloadIcon, ChevronRightIcon } from "lucide-react";
+import { CalendarIcon, SearchIcon, TrashIcon, ChevronRightIcon, PlayIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -17,13 +18,279 @@ import {
 } from "@/components/ui/dialog";
 import { useLiveQuery } from "dexie-react-hooks";
 import db from "@/db/database";
-import type { WorkoutSession } from "@/types";
+import type { WorkoutSession, SessionExercise, WorkoutSet } from "@/types";
+import { exercises as exerciseCatalog } from "@/data/exercises.compact";
+import { formatWeight, type WeightUnit } from "@/lib/units";
 
+const exerciseMap = new Map(exerciseCatalog.map((e) => [e.id, e]));
+
+// ─────────────────────────────────────────────────────────
+// Calendar heatmap (GitHub-style contribution graph)
+// ─────────────────────────────────────────────────────────
+function WorkoutHeatmap({ sessions }: { sessions: WorkoutSession[] }) {
+  const weeks = useMemo(() => {
+    const byDay = new Map<string, number>();
+    for (const s of sessions) {
+      if (!s.completedAt) continue;
+      const d = new Date(s.completedAt);
+      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+      byDay.set(key, (byDay.get(key) ?? 0) + 1);
+    }
+
+    // Build weeks ending today, going back 53 weeks
+    const grid: Array<Array<{ date: Date; count: number } | null>> = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    // Start of the week (Sunday) of 53 weeks ago
+    const start = new Date(today);
+    const dayOffset = (start.getDay() + 6) % 7; // Monday-start? use Sunday
+    start.setDate(start.getDate() - dayOffset - 53 * 7);
+
+    const cursor = new Date(start);
+    for (let w = 0; w < 54; w++) {
+      const week: Array<{ date: Date; count: number } | null> = [];
+      for (let d = 0; d < 7; d++) {
+        if (cursor > today) {
+          week.push(null);
+        } else {
+          const key = `${cursor.getFullYear()}-${cursor.getMonth()}-${cursor.getDate()}`;
+          week.push({ date: new Date(cursor), count: byDay.get(key) ?? 0 });
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      grid.push(week);
+    }
+    return grid;
+  }, [sessions]);
+
+  const colorFor = (count: number) => {
+    if (count === 0) return "bg-muted";
+    return "bg-primary/80";
+  };
+
+  const today = new Date();
+  const thisMonth = today.toLocaleDateString("en", { month: "short" });
+
+  return (
+    <Card className="p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold text-foreground">Activity</h2>
+        <span className="text-xs text-muted-foreground">Last 12 months</span>
+      </div>
+      <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
+        <div className="flex gap-[3px] w-max">
+          {weeks.map((week, wi) => (
+            <div key={wi} className="flex flex-col gap-[3px]">
+              {week.map((cell, di) =>
+                cell ? (
+                  <div
+                    key={di}
+                    title={`${cell.date.toDateString()}: ${cell.count} ${cell.count === 1 ? "workout" : "workouts"}`}
+                    className={`w-[11px] h-[11px] rounded-[3px] ${colorFor(cell.count)}`}
+                  />
+                ) : (
+                  <div key={di} className="w-[11px] h-[11px] rounded-[3px] bg-transparent" />
+                )
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center justify-between mt-2">
+        <span className="text-[10px] text-muted-foreground">{thisMonth} is here</span>
+        <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+          Less
+          <span className="w-[11px] h-[11px] rounded-[3px] bg-muted" />
+          <span className="w-[11px] h-[11px] rounded-[3px] bg-primary/30" />
+          <span className="w-[11px] h-[11px] rounded-[3px] bg-primary/60" />
+          <span className="w-[11px] h-[11px] rounded-[3px] bg-primary/80" />
+          More
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// Session detail drill-down
+// ─────────────────────────────────────────────────────────
+function SessionDetailDialog({
+  session,
+  onOpenChange,
+  onRepeat,
+}: {
+  session: WorkoutSession | null;
+  onOpenChange: (open: boolean) => void;
+  onRepeat: (session: WorkoutSession) => void;
+}) {
+  const sessionId = session?.id;
+
+  const profile = useLiveQuery(() => db.profiles.get("main-user"), []);
+  const weightUnit: WeightUnit = profile?.preferredWeightUnit ?? "kg";
+
+  const exercises = useLiveQuery(
+    () =>
+      sessionId
+        ? db.sessionExercises
+            .where("sessionId")
+            .equals(sessionId)
+            .sortBy("order")
+        : [],
+    [sessionId]
+  );
+
+  const setsByExercise = useLiveQuery(
+    () =>
+      sessionId
+        ? db.workoutSets
+            .where("sessionId")
+            .equals(sessionId)
+            .toArray()
+        : [],
+    [sessionId]
+  );
+
+  const groupSets = (ex: SessionExercise): WorkoutSet[] =>
+    (setsByExercise ?? [])
+      .filter((s) => s.sessionExerciseId === ex.id)
+      .sort((a, b) => a.setNumber - b.setNumber);
+
+  const totalSets = setsByExercise?.length ?? 0;
+
+  return (
+    <Dialog open={!!session} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm p-0 flex flex-col max-h-[85vh]">
+        {session && (
+          <>
+            <DialogHeader className="p-5 pb-3 border-b border-border">
+              <DialogTitle className="text-lg text-left">{session.name}</DialogTitle>
+              <DialogDescription className="text-left">
+                {session.completedAt
+                  ? new Date(session.completedAt).toLocaleDateString("en", {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })
+                  : new Date(session.updatedAt).toLocaleDateString()}
+                {session.estimatedMinutes ? ` · ~${session.estimatedMinutes}m` : ""}
+                {" · "}{totalSets} sets
+              </DialogDescription>
+              {session.focus && session.focus.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {session.focus.map((f) => (
+                    <Badge key={f} variant="secondary" className="text-xs">
+                      {f.replace(/_/g, " ")}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </DialogHeader>
+
+            <ScrollArea className="flex-1">
+              <div className="p-5 space-y-4">
+                {!exercises && (
+                  <div className="space-y-3">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="h-16 skeleton rounded-xl" />
+                    ))}
+                  </div>
+                )}
+
+                {exercises?.map((ex, ei) => {
+                  const def = exerciseMap.get(ex.exerciseId);
+                  const sets = groupSets(ex);
+                  return (
+                    <div key={ex.id}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-bold text-muted-foreground w-5">
+                          {ei + 1}
+                        </span>
+                        <p className="font-semibold text-foreground text-sm flex-1">
+                          {def?.name ?? ex.exerciseId}
+                        </p>
+                        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                          {sets.filter((s) => s.setType !== "warmup").length} working
+                        </Badge>
+                      </div>
+                      <div className="pl-7 space-y-1">
+                        {sets.length === 0 && (
+                          <p className="text-xs text-muted-foreground italic">
+                            No sets logged
+                          </p>
+                        )}
+                        {sets.map((s) => {
+                          let detail: string;
+                          if (s.weightKg) {
+                            detail = `${formatWeight(s.weightKg, weightUnit)} × ${s.reps ?? "?"}`;
+                          } else if (s.assistanceWeightKg) {
+                            detail = `${formatWeight(s.assistanceWeightKg, weightUnit)} assist × ${s.reps ?? "?"}`;
+                          } else if (s.durationSeconds) {
+                            detail = `${Math.floor(s.durationSeconds / 60)}:${(s.durationSeconds % 60)
+                              .toString()
+                              .padStart(2, "0")}${s.distanceMeters ? ` · ${s.distanceMeters} m` : ""}`;
+                          } else if (s.reps) {
+                            detail = `${s.reps} reps`;
+                          } else {
+                            detail = "—";
+                          }
+                          return (
+                            <div
+                              key={s.id}
+                              className="flex items-center gap-2 text-xs py-1 border-b border-border/50 last:border-0"
+                            >
+                              <span className="text-muted-foreground w-4 font-mono">
+                                {s.setNumber}
+                              </span>
+                              <span className="font-mono text-foreground">{detail}</span>
+                              {s.rpe ? (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                  RPE {s.rpe}
+                                </Badge>
+                              ) : null}
+                              {s.setType !== "working" ? (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] px-1.5 py-0 capitalize"
+                                >
+                                  {s.setType}
+                                </Badge>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </ScrollArea>
+
+            <div className="p-4 border-t border-border">
+              <Button
+                onClick={() => onRepeat(session)}
+                className="w-full h-11 rounded-xl font-semibold"
+              >
+                <PlayIcon className="w-4 h-4 mr-2" />
+                Repeat this workout
+              </Button>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+// History page
+// ─────────────────────────────────────────────────────────
 export default function HistoryPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<WorkoutSession | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [detailSession, setDetailSession] = useState<WorkoutSession | null>(null);
 
   const sessions = useLiveQuery(
     () =>
@@ -32,6 +299,19 @@ export default function HistoryPage() {
         .equals("completed")
         .reverse()
         .sortBy("completedAt"),
+    []
+  );
+
+  // Batch set counts: single query instead of one per card (fixes N+1)
+  const setCounts = useLiveQuery(
+    () =>
+      db.workoutSets.toArray().then((sets) => {
+        const map = new Map<string, number>();
+        for (const s of sets) {
+          map.set(s.sessionId, (map.get(s.sessionId) ?? 0) + 1);
+        }
+        return map;
+      }),
     []
   );
 
@@ -66,10 +346,60 @@ export default function HistoryPage() {
     }
   };
 
+  const handleRepeat = async (source: WorkoutSession) => {
+    const now = Date.now();
+    const sessionId = crypto.randomUUID();
+    const sourceExercises = await db.sessionExercises
+      .where("sessionId")
+      .equals(source.id)
+      .sortBy("order");
+
+    await db.transaction(
+      "rw",
+      [db.workoutSessions, db.sessionExercises],
+      async () => {
+        await db.workoutSessions.add({
+          id: sessionId,
+          name: source.name,
+          gymId: source.gymId ?? "ftl",
+          status: "active",
+          source: "duplicate",
+          focus: source.focus,
+          energy: source.energy,
+          estimatedMinutes: source.estimatedMinutes,
+          startedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        for (const ex of sourceExercises) {
+          await db.sessionExercises.add({
+            id: crypto.randomUUID(),
+            sessionId,
+            exerciseId: ex.exerciseId,
+            order: ex.order,
+            status: "pending",
+            targetSets: ex.targetSets,
+            repMin: ex.repMin,
+            repMax: ex.repMax,
+            suggestedWeightKg: ex.suggestedWeightKg,
+            restSeconds: ex.restSeconds,
+            notes: ex.notes,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+    );
+
+    setDetailSession(null);
+    router.push(`/workout/${sessionId}`);
+  };
+
   const totalSessions = sessions?.length ?? 0;
 
   return (
-    <div className="min-h-screen yono-gradient content-with-nav">
+    <div className="min-h-dvh yono-gradient content-with-nav">
       {/* Header */}
       <div className="px-4 pt-12 pb-4">
         <div className="flex items-center justify-between mb-1">
@@ -91,6 +421,13 @@ export default function HistoryPage() {
           />
         </div>
       </div>
+
+      {/* Heatmap */}
+      {sessions && sessions.length > 0 && (
+        <div className="px-4">
+          <WorkoutHeatmap sessions={sessions} />
+        </div>
+      )}
 
       {/* Session list */}
       <div className="px-4 space-y-3">
@@ -130,11 +467,20 @@ export default function HistoryPage() {
           >
             <SessionCard
               session={session}
+              setCount={setCounts?.get(session.id) ?? 0}
+              onOpen={() => setDetailSession(session)}
               onDelete={() => setDeleteTarget(session)}
             />
           </motion.div>
         ))}
       </div>
+
+      {/* Session detail */}
+      <SessionDetailDialog
+        session={detailSession}
+        onOpenChange={(open) => !open && setDetailSession(null)}
+        onRepeat={handleRepeat}
+      />
 
       {/* Delete confirmation */}
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
@@ -173,9 +519,13 @@ export default function HistoryPage() {
 
 function SessionCard({
   session,
+  setCount,
+  onOpen,
   onDelete,
 }: {
   session: WorkoutSession;
+  setCount: number;
+  onOpen: () => void;
   onDelete: () => void;
 }) {
   const date = session.completedAt
@@ -186,13 +536,11 @@ function SessionCard({
     (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)
   );
 
-  const setCount = useLiveQuery(
-    () => db.workoutSets.where("sessionId").equals(session.id).count(),
-    [session.id]
-  );
-
   return (
-    <Card className="p-4 hover:shadow-md transition-shadow">
+    <Card
+      className="p-4 hover:shadow-md transition-shadow cursor-pointer"
+      onClick={onOpen}
+    >
       <div className="flex items-center gap-3">
         {/* Date badge */}
         <div className="flex flex-col items-center justify-center w-12 h-12 bg-primary/10 rounded-xl shrink-0">
@@ -209,9 +557,7 @@ function SessionCard({
             <span className="text-xs text-muted-foreground">
               {daysSince === 0 ? "Today" : daysSince === 1 ? "Yesterday" : `${daysSince}d ago`}
             </span>
-            {setCount !== undefined && (
-              <span className="text-xs text-muted-foreground">· {setCount} sets</span>
-            )}
+            <span className="text-xs text-muted-foreground">· {setCount} sets</span>
             {session.estimatedMinutes && (
               <span className="text-xs text-muted-foreground">
                 · ~{session.estimatedMinutes}m
@@ -223,7 +569,10 @@ function SessionCard({
         {/* Actions */}
         <div className="flex items-center gap-1">
           <button
-            onClick={onDelete}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
             className="p-2 text-muted-foreground hover:text-destructive rounded-lg transition-colors"
             aria-label="Delete workout"
           >

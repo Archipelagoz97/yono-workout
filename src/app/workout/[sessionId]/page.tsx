@@ -7,13 +7,14 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CheckIcon,
-  SkipForwardIcon,
   PlusIcon,
   MinusIcon,
   TimerIcon,
-  XIcon,
   FlagIcon,
   InfoIcon,
+  Undo2Icon,
+  BookmarkIcon,
+  Link2Icon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -32,8 +33,12 @@ import db from "@/db/database";
 import { useLiveQuery } from "dexie-react-hooks";
 import { exercises as exerciseCatalog } from "@/data/exercises.compact";
 import { saveActiveWorkoutState, getActiveWorkoutState, clearActiveWorkoutState } from "@/lib/storage";
-import { getProgressionAdvice, estimateOneRepMax } from "@/lib/progression";
+import { getProgressionAdvice } from "@/lib/progression";
+import { notifyRestComplete, unlockAudio } from "@/lib/notifications";
+import { kgToDisplay, displayToKg, roundToPlate, formatWeight } from "@/lib/units";
 import { ExerciseDetailsDialog } from "@/components/workout/ExerciseDetailsDialog";
+import { saveTemplate, createTemplateFromSession } from "@/lib/templates";
+import type { WorkoutSet } from "@/types";
 
 const exerciseMap = new Map(exerciseCatalog.map((e) => [e.id, e]));
 
@@ -41,6 +46,8 @@ const REST_DEFAULTS: Record<string, number> = {
   working: 90,
   warmup: 60,
 };
+
+const SWIPE_THRESHOLD = 50;
 
 export default function WorkoutPage() {
   const params = useParams();
@@ -50,8 +57,12 @@ export default function WorkoutPage() {
   // State
   const [exerciseIndex, setExerciseIndex] = useState(0);
   const [setNumber, setSetNumber] = useState(1);
-  const [weightKg, setWeightKg] = useState<number>(0);
+  const [setType, setSetType] = useState<"warmup" | "working">("working");
+  const [weight, setWeight] = useState<number>(0);
   const [reps, setReps] = useState<number>(10);
+  const [rpe, setRpe] = useState<number>(0);
+  const [durationSeconds, setDurationSeconds] = useState<number>(0);
+  const [distanceMeters, setDistanceMeters] = useState<number>(0);
   const [isSaving, setIsSaving] = useState(false);
   const [savedCopy, setSavedCopy] = useState<string | null>(null);
   const [yonoState, setYonoState] = useState<YonoState>("idle");
@@ -59,15 +70,28 @@ export default function WorkoutPage() {
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   const [detailsExId, setDetailsExId] = useState<string | null>(null);
+  const [lastSavedSet, setLastSavedSet] = useState<{
+    id: string;
+    exerciseIndex: number;
+    setNumber: number;
+    warmup: boolean;
+  } | null>(null);
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [templateSaved, setTemplateSaved] = useState(false);
 
   // Rest timer
   const [restActive, setRestActive] = useState(false);
   const [restRemaining, setRestRemaining] = useState(0);
   const [restTotal, setRestTotal] = useState(90);
   const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const undoBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartX = useRef<number | null>(null);
 
   // Live data
   const session = useLiveQuery(() => db.workoutSessions.get(sessionId), [sessionId]);
+  const profile = useLiveQuery(() => db.profiles.get("main-user"), []);
   const sessionExercises = useLiveQuery(
     () =>
       db.sessionExercises
@@ -88,10 +112,28 @@ export default function WorkoutPage() {
         ? db.workoutSets
             .where("sessionExerciseId")
             .equals(currentSessionExercise.id)
-            .toArray()
+            .sortBy("setNumber")
         : [],
     [currentSessionExercise?.id]
   );
+
+  const measurementType = exerciseDef?.measurementType;
+  const weightUnit = profile?.preferredWeightUnit ?? "kg";
+  const hasWeightInput =
+    measurementType === "weight_reps" ||
+    measurementType === "weighted_bodyweight_reps" ||
+    measurementType === "assisted_weight_reps";
+  const hasRepsInput =
+    measurementType === "weight_reps" ||
+    measurementType === "bodyweight_reps" ||
+    measurementType === "weighted_bodyweight_reps" ||
+    measurementType === "assisted_weight_reps";
+  const hasDurationInput =
+    measurementType === "duration" ||
+    measurementType === "distance_duration" ||
+    measurementType === "calories_duration";
+  const hasDistanceInput = measurementType === "distance_duration";
+  const isStrengthType = hasWeightInput || hasRepsInput;
 
   // Restore state from localStorage
   useEffect(() => {
@@ -124,26 +166,38 @@ export default function WorkoutPage() {
     });
   }, [sessionId, exerciseIndex, setNumber, restActive, restRemaining, session]);
 
-  // Initialize weight from suggestion or history
+  // Initialize inputs from suggestion or history
   useEffect(() => {
     if (!currentSessionExercise) return;
     const suggested = currentSessionExercise.suggestedWeightKg;
     if (suggested) {
-      setWeightKg(suggested);
+      setWeight(kgToDisplay(suggested, weightUnit));
     } else {
-      setWeightKg(0);
+      setWeight(0);
     }
     const targetRepMax = currentSessionExercise.repMax ?? 12;
     setReps(targetRepMax);
+    setRpe(0);
+    setSetType("working");
+    setDurationSeconds(0);
+    setDistanceMeters(0);
+    setLastSavedSet(null);
+    if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+    if (undoBannerTimerRef.current) clearTimeout(undoBannerTimerRef.current);
+    unlockAudio();
   }, [currentSessionExercise?.id]);
 
   // Pre-fill from last set
   useEffect(() => {
     if (!completedSets || completedSets.length === 0) return;
     const lastSet = completedSets[completedSets.length - 1];
-    if (lastSet.weightKg) setWeightKg(lastSet.weightKg);
+    if (lastSet.weightKg) setWeight(kgToDisplay(lastSet.weightKg, weightUnit));
     if (lastSet.reps) setReps(lastSet.reps);
-  }, [completedSets?.length]);
+    if (lastSet.durationSeconds) setDurationSeconds(lastSet.durationSeconds);
+    if (lastSet.distanceMeters) setDistanceMeters(lastSet.distanceMeters);
+    if (lastSet.setType === "warmup") setSetType("warmup");
+    else setSetType("working");
+  }, [completedSets?.length, weightUnit]);
 
   // Rest timer countdown
   useEffect(() => {
@@ -158,6 +212,7 @@ export default function WorkoutPage() {
           clearInterval(restTimerRef.current!);
           setRestActive(false);
           setYonoState("performing");
+          notifyRestComplete();
           return 0;
         }
         return prev - 1;
@@ -172,6 +227,22 @@ export default function WorkoutPage() {
   // Progress
   const totalExercises = sessionExercises?.length ?? 1;
   const progressPct = ((exerciseIndex) / totalExercises) * 100;
+
+  const workingSetsDone =
+    completedSets?.filter((s) => s.setType !== "warmup").length ?? 0;
+  const warmupSetsDone =
+    completedSets?.filter((s) => s.setType === "warmup").length ?? 0;
+  const targetSets = currentSessionExercise?.targetSets ?? 3;
+
+  // Superset grouping: members share the same supersetGroup id
+  const supersetGroup = currentSessionExercise?.supersetGroup;
+  const groupMembers = supersetGroup
+    ? (sessionExercises ?? []).filter((e) => e.supersetGroup === supersetGroup)
+    : [];
+  const isLastInGroup = currentSessionExercise
+    ? groupMembers.length === 0 ||
+      groupMembers[groupMembers.length - 1].id === currentSessionExercise.id
+    : true;
 
   // Get exercise history
   const exerciseHistory = useLiveQuery(
@@ -190,16 +261,83 @@ export default function WorkoutPage() {
 
   const lastSessionSets = exerciseHistory?.slice(0, 3) ?? [];
 
-  const progressionAdvice = currentSessionExercise && lastSessionSets.length > 0
+  const progressionAdvice = currentSessionExercise && lastSessionSets.length > 0 && isStrengthType
     ? getProgressionAdvice(
         lastSessionSets
           .filter((s) => s.weightKg && s.reps)
           .map((s) => ({ weightKg: s.weightKg!, reps: s.reps! })),
         currentSessionExercise.repMin ?? 8,
         currentSessionExercise.repMax ?? 12,
-        weightKg
+        displayToKg(weight, weightUnit)
       )
     : null;
+
+  const clearAdvanceTimer = () => {
+    if (advanceTimerRef.current) {
+      clearTimeout(advanceTimerRef.current);
+      advanceTimerRef.current = null;
+    }
+  };
+
+  const clearUndoBannerTimer = () => {
+    if (undoBannerTimerRef.current) {
+      clearTimeout(undoBannerTimerRef.current);
+      undoBannerTimerRef.current = null;
+    }
+  };
+
+  const goToExercise = (index: number) => {
+    if (index < 0 || index >= totalExercises) return;
+    clearAdvanceTimer();
+    clearUndoBannerTimer();
+    setExerciseIndex(index);
+    setSetNumber(1);
+    setLastSavedSet(null);
+  };
+
+  const goPrev = () => {
+    if (exerciseIndex > 0) goToExercise(exerciseIndex - 1);
+  };
+
+  const goNext = () => {
+    if (exerciseIndex < totalExercises - 1) {
+      goToExercise(exerciseIndex + 1);
+    } else {
+      setShowFinishDialog(true);
+    }
+  };
+
+  // Toggle superset grouping with the next exercise
+  const toggleSuperset = async () => {
+    if (!currentSessionExercise) return;
+    const now = Date.now();
+
+    if (currentSessionExercise.supersetGroup) {
+      // Unlink all members of the current group
+      for (const member of groupMembers) {
+        await db.sessionExercises.update(member.id, {
+          supersetGroup: undefined,
+          updatedAt: now,
+        });
+      }
+      setSavedCopy("Superset removed.");
+      return;
+    }
+
+    const nextExercise = sessionExercises?.[exerciseIndex + 1];
+    if (!nextExercise) return;
+
+    const groupId = crypto.randomUUID();
+    await db.sessionExercises.update(currentSessionExercise.id, {
+      supersetGroup: groupId,
+      updatedAt: now,
+    });
+    await db.sessionExercises.update(nextExercise.id, {
+      supersetGroup: groupId,
+      updatedAt: now,
+    });
+    setSavedCopy(`Superset: ${exerciseDef?.name} + next exercise.`);
+  };
 
   const handleCompleteSet = useCallback(async () => {
     if (isSaving || !currentSessionExercise) return;
@@ -207,41 +345,102 @@ export default function WorkoutPage() {
     setIsSaving(true);
     try {
       const now = Date.now();
-      await db.workoutSets.add({
+      const setRecord: WorkoutSet = {
         id: crypto.randomUUID(),
         sessionId,
         sessionExerciseId: currentSessionExercise.id,
         exerciseId: currentSessionExercise.exerciseId,
         setNumber,
-        setType: "working",
-        weightKg: weightKg > 0 ? weightKg : undefined,
-        reps: reps > 0 ? reps : undefined,
+        setType,
         completedAt: now,
         updatedAt: now,
+      };
+
+      if (hasWeightInput) {
+        if (measurementType === "assisted_weight_reps") {
+          setRecord.assistanceWeightKg =
+            weight > 0
+              ? Math.round(displayToKg(weight, weightUnit) * 100) / 100
+              : undefined;
+        } else {
+          setRecord.weightKg =
+            weight > 0
+              ? Math.round(displayToKg(weight, weightUnit) * 100) / 100
+              : undefined;
+        }
+      }
+      if (hasRepsInput) {
+        setRecord.reps = reps > 0 ? reps : undefined;
+      }
+      if (hasDurationInput) {
+        setRecord.durationSeconds = durationSeconds > 0 ? durationSeconds : undefined;
+      }
+      if (hasDistanceInput) {
+        setRecord.distanceMeters = distanceMeters > 0 ? distanceMeters : undefined;
+      }
+      if (rpe > 0) {
+        setRecord.rpe = rpe;
+      }
+
+      await db.workoutSets.add(setRecord);
+
+      // Track for undo
+      setLastSavedSet({
+        id: setRecord.id,
+        exerciseIndex,
+        setNumber,
+        warmup: setType === "warmup",
       });
+      clearUndoBannerTimer();
+      undoBannerTimerRef.current = setTimeout(() => {
+        setLastSavedSet(null);
+      }, 6000);
 
       const copy = getRandomCopy("set_complete");
       setSavedCopy(copy ?? null);
       setYonoState("set_complete");
 
-      // Start rest timer
-      const restDuration = currentSessionExercise.restSeconds ?? REST_DEFAULTS.working;
-      setRestTotal(restDuration);
-      setRestRemaining(restDuration);
-      setRestActive(true);
+      // Advance set number / exercise
+      const isWarmupSet = setType === "warmup";
+      const workingAfterThis = workingSetsDone + 1;
 
-      // Advance set number
-      const targetSets = currentSessionExercise.targetSets ?? 3;
-      if (setNumber >= targetSets) {
-        // Move to next exercise after a moment
-        setTimeout(() => {
-          if (exerciseIndex < totalExercises - 1) {
-            setExerciseIndex((prev) => prev + 1);
-            setSetNumber(1);
-          }
-          setYonoState("resting");
-          setSavedCopy(null);
-        }, 1500);
+      if (!isWarmupSet && workingAfterThis >= targetSets) {
+        if (!isLastInGroup) {
+          // Superset: go straight to the next member, no rest
+          clearAdvanceTimer();
+          advanceTimerRef.current = setTimeout(() => {
+            const nextMember = groupMembers.find(
+              (m) => m.order > currentSessionExercise.order
+            );
+            const nextIndex = nextMember
+              ? sessionExercises?.findIndex((e) => e.id === nextMember.id) ?? exerciseIndex
+              : exerciseIndex + 1;
+            if (nextIndex >= 0 && nextIndex < (sessionExercises?.length ?? 1)) {
+              setExerciseIndex(nextIndex);
+              setSetNumber(1);
+            }
+            setYonoState("idle");
+            setSavedCopy(null);
+          }, 1200);
+        } else {
+          // Start rest timer for the last member of the group
+          const restDuration =
+            currentSessionExercise.restSeconds ?? REST_DEFAULTS.working;
+          setRestTotal(restDuration);
+          setRestRemaining(restDuration);
+          setRestActive(true);
+
+          // Move to next exercise after a moment
+          clearAdvanceTimer();
+          advanceTimerRef.current = setTimeout(() => {
+            if (exerciseIndex < totalExercises - 1) {
+              setExerciseIndex((prev) => prev + 1);
+              setSetNumber(1);
+            }
+            setYonoState("resting");
+            setSavedCopy(null);
+          }, 1500);
+        }
       } else {
         setSetNumber((prev) => prev + 1);
         setTimeout(() => {
@@ -255,7 +454,69 @@ export default function WorkoutPage() {
     } finally {
       setIsSaving(false);
     }
-  }, [isSaving, currentSessionExercise, sessionId, setNumber, weightKg, reps, exerciseIndex, totalExercises]);
+  }, [
+    isSaving,
+    currentSessionExercise,
+    sessionId,
+    setNumber,
+    setType,
+    weight,
+    reps,
+    rpe,
+    durationSeconds,
+    distanceMeters,
+    exerciseIndex,
+    totalExercises,
+    workingSetsDone,
+    targetSets,
+    hasWeightInput,
+    hasRepsInput,
+    hasDurationInput,
+    hasDistanceInput,
+    measurementType,
+    weightUnit,
+    isLastInGroup,
+    groupMembers,
+    sessionExercises,
+  ]);
+
+  const handleUndoLastSet = async () => {
+    if (!lastSavedSet) return;
+    const setToDelete = await db.workoutSets.get(lastSavedSet.id).catch(() => undefined);
+    if (setToDelete) {
+      await db.workoutSets.delete(lastSavedSet.id);
+    }
+    // Stop rest timer
+    setRestActive(false);
+    setRestRemaining(0);
+    // Revert position (works whether or not auto-advance fired)
+    clearAdvanceTimer();
+    goToExercise(lastSavedSet.exerciseIndex);
+    setSetNumber(lastSavedSet.setNumber);
+    setLastSavedSet(null);
+    setSavedCopy("Set removed.");
+    setYonoState("idle");
+  };
+
+  const handleSaveTemplate = async () => {
+    const name = templateName.trim() || session?.name || "Workout template";
+    const template = createTemplateFromSession(
+      name,
+      session?.focus,
+      (sessionExercises ?? []).map((ex) => ({
+        exerciseId: ex.exerciseId,
+        order: ex.order,
+        targetSets: ex.targetSets,
+        repMin: ex.repMin,
+        repMax: ex.repMax,
+        suggestedWeightKg: ex.suggestedWeightKg,
+        restSeconds: ex.restSeconds,
+        notes: ex.notes,
+      }))
+    );
+    saveTemplate(template);
+    setTemplateSaved(true);
+  };
 
   const handleFinishWorkout = async () => {
     setIsFinishing(true);
@@ -270,13 +531,28 @@ export default function WorkoutPage() {
       setShowFinishDialog(false);
       setShowCompleteDialog(true);
     } finally {
+
       setIsFinishing(false);
     }
   };
 
+  // Touch swipe navigation
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(dx) < SWIPE_THRESHOLD) return;
+    if (dx < 0) goNext();
+    else goPrev();
+  };
+
   if (!session || !sessionExercises) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-dvh flex items-center justify-center">
         <div className="text-center">
           <YonoAnimation state="thinking" size={100} />
           <p className="text-muted-foreground mt-3">Loading workout...</p>
@@ -287,7 +563,7 @@ export default function WorkoutPage() {
 
   if (sessionExercises.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="min-h-dvh flex items-center justify-center p-4">
         <div className="text-center">
           <p className="text-muted-foreground">No exercises in this workout.</p>
           <Button className="mt-4" onClick={() => router.back()}>
@@ -300,8 +576,11 @@ export default function WorkoutPage() {
 
   const animFamily = (exerciseDef?.animationFamily as YonoAnimationFamily) ?? "generic_machine";
 
+  const weightLabel =
+    measurementType === "assisted_weight_reps" ? "Assistance weight" : "Weight";
+
   return (
-    <div className="min-h-screen bg-background flex flex-col content-with-nav">
+    <div className="min-h-dvh bg-background flex flex-col content-with-nav">
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-12 pb-3">
         <button
@@ -316,13 +595,27 @@ export default function WorkoutPage() {
           </p>
           <p className="text-sm font-semibold text-foreground">{session.name}</p>
         </div>
-        <button
-          onClick={() => setShowFinishDialog(true)}
-          className="p-2 -mr-2 text-muted-foreground hover:text-foreground"
-          id="btn-finish-workout"
-        >
-          <FlagIcon className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => {
+              setTemplateSaved(false);
+              setTemplateName(session?.name ?? "");
+              setShowTemplateDialog(true);
+            }}
+            className="p-2 text-muted-foreground hover:text-primary transition-colors"
+            title="Save as template"
+            id="btn-save-template"
+          >
+            <BookmarkIcon className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => setShowFinishDialog(true)}
+            className="p-2 -mr-2 text-muted-foreground hover:text-foreground"
+            id="btn-finish-workout"
+          >
+            <FlagIcon className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Progress bar */}
@@ -355,11 +648,15 @@ export default function WorkoutPage() {
       </AnimatePresence>
 
       {/* Main exercise card */}
-      <div className="flex-1 px-4">
+      <div
+        className="flex-1 px-4"
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
         <Card className="p-5 mb-4 shadow-sm">
           {/* Exercise name */}
           <div className="mb-4">
-            <div 
+            <div
               className="flex items-center gap-1.5 cursor-pointer hover:text-primary transition-colors group mb-1"
               onClick={() => {
                 if (currentSessionExercise) setDetailsExId(currentSessionExercise.exerciseId);
@@ -371,16 +668,72 @@ export default function WorkoutPage() {
               <InfoIcon className="w-5 h-5 text-muted-foreground group-hover:text-primary" />
             </div>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <Badge variant="outline" className="text-xs">
-                Set {setNumber} of {currentSessionExercise?.targetSets ?? 3}
-              </Badge>
-              {currentSessionExercise?.repMin && currentSessionExercise?.repMax && (
+              {setType === "warmup" ? (
+                <Badge variant="secondary" className="text-xs">
+                  Warmup set {warmupSetsDone + 1}
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-xs">
+                  Working set {workingSetsDone + 1} of {targetSets}
+                </Badge>
+              )}
+              {currentSessionExercise?.repMin && currentSessionExercise?.repMax && isStrengthType && (
                 <Badge variant="secondary" className="text-xs">
                   Target {currentSessionExercise.repMin}–{currentSessionExercise.repMax} reps
                 </Badge>
               )}
+              {supersetGroup && (
+                <Badge variant="outline" className="text-xs border-accent/40 text-accent">
+                  Superset
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <button
+                id="btn-toggle-superset"
+                onClick={toggleSuperset}
+                disabled={!isStrengthType || !sessionExercises}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                  supersetGroup
+                    ? "bg-accent/15 border-accent/40 text-accent"
+                    : "bg-muted/50 border-border text-muted-foreground hover:text-foreground"
+                } disabled:opacity-40`}
+              >
+                <Link2Icon className="w-3.5 h-3.5" />
+                {supersetGroup ? "In superset" : "Superset"}
+              </button>
             </div>
           </div>
+
+          {/* Warmup / Working toggle */}
+          {isStrengthType && (
+            <div className="mb-4">
+              <div className="grid grid-cols-2 gap-1 p-1 bg-muted/60 rounded-xl">
+                <button
+                  id="btn-set-type-working"
+                  onClick={() => setSetType("working")}
+                  className={`py-2 rounded-lg text-sm font-semibold transition-all ${
+                    setType === "working"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  Working
+                </button>
+                <button
+                  id="btn-set-type-warmup"
+                  onClick={() => setSetType("warmup")}
+                  className={`py-2 rounded-lg text-sm font-semibold transition-all ${
+                    setType === "warmup"
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  Warmup
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Rest timer */}
           <AnimatePresence>
@@ -450,7 +803,15 @@ export default function WorkoutPage() {
                     key={i}
                     className="text-xs bg-background border border-border px-2 py-1 rounded-lg font-mono"
                   >
-                    {s.weightKg ?? "BW"}{s.weightKg ? " kg" : ""} × {s.reps ?? "?"}
+                    {s.weightKg
+                      ? `${formatWeight(s.weightKg, weightUnit)} × ${s.reps ?? "?"}`
+                      : s.assistanceWeightKg
+                      ? `${formatWeight(s.assistanceWeightKg, weightUnit)} assist × ${s.reps ?? "?"}`
+                      : s.durationSeconds
+                      ? `${Math.floor(s.durationSeconds / 60)}:${(s.durationSeconds % 60).toString().padStart(2, "0")}${s.distanceMeters ? ` · ${s.distanceMeters} m` : ""}`
+                      : s.reps
+                      ? `${s.reps} reps`
+                      : "—"}
                   </span>
                 ))}
               </div>
@@ -463,35 +824,34 @@ export default function WorkoutPage() {
           )}
 
           {/* Weight control */}
-          {exerciseDef?.measurementType === "weight_reps" ||
-           exerciseDef?.measurementType === "weighted_bodyweight_reps" ? (
+          {hasWeightInput && (
             <div className="mb-4">
-              <label className="text-sm font-medium text-foreground block mb-2">Weight</label>
+              <label className="text-sm font-medium text-foreground block mb-2">{weightLabel}</label>
               <div className="flex items-center gap-4 justify-center">
                 <button
                   id="btn-weight-decrease"
-                  onClick={() => setWeightKg((w) => Math.max(0, Math.round((w - 1.25) * 100) / 100))}
+                  onClick={() => setWeight((w) => Math.max(0, roundToPlate(w - (weightUnit === "lb" ? 2.5 : 1.25), weightUnit)))}
                   className="w-14 h-14 rounded-2xl bg-muted border border-border flex items-center justify-center touch-target hover:bg-muted/70 active:scale-95 transition-all"
                 >
                   <MinusIcon className="w-5 h-5" />
                 </button>
                 <div className="text-center min-w-[100px]">
-                  <span className="numeric-display">{weightKg}</span>
-                  <span className="text-sm text-muted-foreground ml-1">kg</span>
+                  <span className="numeric-display">{weight}</span>
+                  <span className="text-sm text-muted-foreground ml-1">{weightUnit}</span>
                 </div>
                 <button
                   id="btn-weight-increase"
-                  onClick={() => setWeightKg((w) => Math.round((w + 1.25) * 100) / 100)}
+                  onClick={() => setWeight((w) => roundToPlate(w + (weightUnit === "lb" ? 2.5 : 1.25), weightUnit))}
                   className="w-14 h-14 rounded-2xl bg-muted border border-border flex items-center justify-center touch-target hover:bg-muted/70 active:scale-95 transition-all"
                 >
                   <PlusIcon className="w-5 h-5" />
                 </button>
               </div>
               <div className="flex justify-center gap-2 mt-2">
-                {[2.5, 5, 10].map((inc) => (
+                {(weightUnit === "lb" ? [5, 10, 20] : [2.5, 5, 10]).map((inc) => (
                   <button
                     key={inc}
-                    onClick={() => setWeightKg((w) => Math.round((w + inc) * 100) / 100)}
+                    onClick={() => setWeight((w) => roundToPlate(w + inc, weightUnit))}
                     className="px-3 py-1 text-xs bg-muted rounded-lg border border-border hover:bg-muted/70 transition-colors"
                   >
                     +{inc}
@@ -499,12 +859,10 @@ export default function WorkoutPage() {
                 ))}
               </div>
             </div>
-          ) : null}
+          )}
 
           {/* Reps control */}
-          {(exerciseDef?.measurementType === "weight_reps" ||
-            exerciseDef?.measurementType === "bodyweight_reps" ||
-            exerciseDef?.measurementType === "weighted_bodyweight_reps") && (
+          {hasRepsInput && (
             <div className="mb-5">
               <label className="text-sm font-medium text-foreground block mb-2">Reps</label>
               <div className="flex items-center gap-4 justify-center">
@@ -529,6 +887,122 @@ export default function WorkoutPage() {
             </div>
           )}
 
+          {/* Duration control */}
+          {hasDurationInput && (
+            <div className="mb-5">
+              <label className="text-sm font-medium text-foreground block mb-2">
+                Duration{" "}
+                <span className="text-xs text-muted-foreground font-normal">
+                  (minutes)
+                </span>
+              </label>
+              <div className="flex items-center gap-4 justify-center">
+                <button
+                  id="btn-duration-decrease"
+                  onClick={() => setDurationSeconds((d) => Math.max(0, d - 15))}
+                  className="w-14 h-14 rounded-2xl bg-muted border border-border flex items-center justify-center touch-target hover:bg-muted/70 active:scale-95 transition-all"
+                >
+                  <MinusIcon className="w-5 h-5" />
+                </button>
+                <div className="text-center min-w-[110px]">
+                  <span className="numeric-display">
+                    {Math.floor(durationSeconds / 60)}:{(durationSeconds % 60).toString().padStart(2, "0")}
+                  </span>
+                  <span className="text-sm text-muted-foreground ml-1">min</span>
+                </div>
+                <button
+                  id="btn-duration-increase"
+                  onClick={() => setDurationSeconds((d) => d + 15)}
+                  className="w-14 h-14 rounded-2xl bg-muted border border-border flex items-center justify-center touch-target hover:bg-muted/70 active:scale-95 transition-all"
+                >
+                  <PlusIcon className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex justify-center gap-2 mt-2">
+                {[30, 60, 120].map((inc) => (
+                  <button
+                    key={inc}
+                    onClick={() => setDurationSeconds((d) => d + inc)}
+                    className="px-3 py-1 text-xs bg-muted rounded-lg border border-border hover:bg-muted/70 transition-colors"
+                  >
+                    +{inc}s
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Distance control */}
+          {hasDistanceInput && (
+            <div className="mb-5">
+              <label className="text-sm font-medium text-foreground block mb-2">
+                Distance{" "}
+                <span className="text-xs text-muted-foreground font-normal">
+                  (meters)
+                </span>
+              </label>
+              <div className="flex items-center gap-4 justify-center">
+                <button
+                  id="btn-distance-decrease"
+                  onClick={() => setDistanceMeters((d) => Math.max(0, d - 100))}
+                  className="w-14 h-14 rounded-2xl bg-muted border border-border flex items-center justify-center touch-target hover:bg-muted/70 active:scale-95 transition-all"
+                >
+                  <MinusIcon className="w-5 h-5" />
+                </button>
+                <div className="text-center min-w-[110px]">
+                  <span className="numeric-display">{distanceMeters}</span>
+                  <span className="text-sm text-muted-foreground ml-1">m</span>
+                </div>
+                <button
+                  id="btn-distance-increase"
+                  onClick={() => setDistanceMeters((d) => d + 100)}
+                  className="w-14 h-14 rounded-2xl bg-muted border border-border flex items-center justify-center touch-target hover:bg-muted/70 active:scale-95 transition-all"
+                >
+                  <PlusIcon className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex justify-center gap-2 mt-2">
+                {[500, 1000, 2000].map((inc) => (
+                  <button
+                    key={inc}
+                    onClick={() => setDistanceMeters((d) => d + inc)}
+                    className="px-3 py-1 text-xs bg-muted rounded-lg border border-border hover:bg-muted/70 transition-colors"
+                  >
+                    +{inc >= 1000 ? `${inc / 1000}km` : `${inc}m`}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* RPE control */}
+          {isStrengthType && (
+            <div className="mb-5">
+              <label className="text-sm font-medium text-foreground block mb-2">
+                RPE{" "}
+                <span className="text-xs text-muted-foreground font-normal">
+                  {rpe > 0 ? `${rpe}/10` : "— optional"}
+                </span>
+              </label>
+              <div className="flex flex-wrap gap-1.5 justify-center">
+                {[6, 7, 8, 9, 10].map((v) => (
+                  <button
+                    key={v}
+                    id={`btn-rpe-${v}`}
+                    onClick={() => setRpe(rpe === v ? 0 : v)}
+                    className={`w-10 h-10 rounded-xl text-sm font-semibold border transition-all ${
+                      rpe === v
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Complete Set button */}
           <Button
             id="btn-complete-set"
@@ -547,10 +1021,32 @@ export default function WorkoutPage() {
             ) : (
               <>
                 <CheckIcon className="w-5 h-5 mr-2" />
-                Complete Set
+                Complete {setType === "warmup" ? "Warmup" : "Set"}
               </>
             )}
           </Button>
+
+          {/* Undo last set */}
+          <AnimatePresence>
+            {lastSavedSet && !restActive && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="mt-3"
+              >
+                <Button
+                  id="btn-undo-set"
+                  variant="outline"
+                  onClick={handleUndoLastSet}
+                  className="w-full h-10 text-xs font-medium rounded-xl text-muted-foreground"
+                >
+                  <Undo2Icon className="w-4 h-4 mr-1.5" />
+                  Undo last set
+                </Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </Card>
 
         {/* Quick cues */}
@@ -575,12 +1071,7 @@ export default function WorkoutPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              if (exerciseIndex > 0) {
-                setExerciseIndex((i) => i - 1);
-                setSetNumber(1);
-              }
-            }}
+            onClick={goPrev}
             disabled={exerciseIndex === 0}
             className="flex-1 rounded-xl"
           >
@@ -589,14 +1080,7 @@ export default function WorkoutPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              if (exerciseIndex < totalExercises - 1) {
-                setExerciseIndex((i) => i + 1);
-                setSetNumber(1);
-              } else {
-                setShowFinishDialog(true);
-              }
-            }}
+            onClick={goNext}
             className="flex-1 rounded-xl"
           >
             {exerciseIndex < totalExercises - 1 ? (
@@ -611,6 +1095,48 @@ export default function WorkoutPage() {
           </Button>
         </div>
       </div>
+
+      {/* Save as template */}
+      <Dialog open={showTemplateDialog} onOpenChange={(open) => { setShowTemplateDialog(open); if (!open) { setTemplateSaved(false); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{templateSaved ? "Template saved" : "Save as template"}</DialogTitle>
+            <DialogDescription>
+              {templateSaved
+                ? "This workout is now available in your templates to start again any time."
+                : "Templates are stored on this device and let you repeat a workout with one tap."}
+            </DialogDescription>
+          </DialogHeader>
+          {templateSaved ? (
+            <div className="flex flex-col gap-2 mt-4">
+              <Button
+                onClick={() => { setShowTemplateDialog(false); setTemplateSaved(false); }}
+                className="w-full h-12 font-semibold"
+              >
+                Done
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3 mt-4">
+              <input
+                value={templateName}
+                onChange={(e) => setTemplateName(e.target.value)}
+                placeholder="Template name"
+                className="h-11 rounded-xl border border-border bg-muted/50 px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <Button
+                id="btn-confirm-save-template"
+                onClick={handleSaveTemplate}
+                disabled={!templateName.trim()}
+                className="w-full h-12 font-semibold"
+              >
+                <BookmarkIcon className="w-4 h-4 mr-1.5" />
+                Save template
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Finish confirmation */}
       <Dialog open={showFinishDialog} onOpenChange={setShowFinishDialog}>

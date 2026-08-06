@@ -3,20 +3,23 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ZapIcon, ClockIcon, FlameIcon, WrenchIcon, RefreshCwIcon, PlayIcon, AlertCircleIcon, Settings2Icon, InfoIcon, PlusIcon, XIcon, TrashIcon, FileTextIcon } from "lucide-react";
+import { ZapIcon, ClockIcon, FlameIcon, WrenchIcon, RefreshCwIcon, PlayIcon, AlertCircleIcon, Settings2Icon, InfoIcon, PlusIcon, XIcon, TrashIcon, FileTextIcon, RepeatIcon, BookmarkIcon, CopyIcon, CheckIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { YonoAnimation } from "@/components/yono/YonoAnimation";
 import { ExerciseDetailsDialog } from "@/components/workout/ExerciseDetailsDialog";
 import { ExerciseSelectorDialog } from "@/components/workout/ExerciseSelectorDialog";
+import { MuscleRecoveryPanel } from "@/components/workout/MuscleRecoveryPanel";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { getCopy } from "@/data/yono-copy";
 import db from "@/db/database";
 import { useLiveQuery } from "dexie-react-hooks";
-import { getSelectedGymId, setSelectedGymId } from "@/lib/storage";
+import { getSelectedGymId, setSelectedGymId, getWorkoutPrefs, saveWorkoutPrefs } from "@/lib/storage";
+import { getTemplates, deleteTemplate, type WorkoutTemplate } from "@/lib/templates";
 import { exercises } from "@/data/exercises.compact";
 import { getFallbackExercises } from "@/lib/progression";
+import { kgToDisplay, type WeightUnit } from "@/lib/units";
 import type { WorkoutSession } from "@/types";
 import type { BulkImportLogResult } from "@/lib/ai/schemas";
 
@@ -61,24 +64,41 @@ const EQUIPMENT_OPTIONS = [
 
 type GenerationState = "idle" | "loading" | "success" | "error" | "offline";
 
+// Reverse prompt: paste into an external AI so its log output matches Yono's importer.
+const REVERSE_IMPORT_PROMPT = `You are my workout log assistant. Write today's session so it can be machine-parsed. Use this exact format:
+
+Session: <Name> (<day or focus>, <date if known>)
+
+Exercises:
+1. <Exercise name> — <sets> sets x <reps> reps @ <weight>kg
+2. <Exercise name> — <sets> sets x <reps> reps @ <weight>kg
+
+Rules:
+- Use the real exercise names (e.g. "Lat Pulldown", "Bench Press", "Treadmill").
+- Always specify weight in kg (convert lb to kg: 1 lb = 0.45 kg).
+- For sets with different weights/reps, write each set separately, e.g. "3x10 @ 30kg, 3x8 @ 35kg".
+- Bodyweight exercises: write only sets x reps (no weight), e.g. "3x12".
+- Cardio: write duration and distance, e.g. "20 min @ 5 km".
+- List exercises in the order I did them. Don't add commentary.`;
+
 function LoadingLogs({ sessions }: { sessions: WorkoutSession[] | undefined }) {
   const [logs, setLogs] = useState<string[]>([]);
   
   useEffect(() => {
-    const baseLogs = ["Mengaktifkan Yono AI..."];
+    const baseLogs = ["Activating Yono AI..."];
     if (sessions && sessions.length > 0) {
-      baseLogs.push(`Menganalisis ${sessions.length} riwayat latihan terakhir...`);
+      baseLogs.push(`Analyzing your last ${sessions.length} workouts...`);
       sessions.forEach(s => {
-        const dateStr = s.completedAt ? new Date(s.completedAt).toLocaleDateString() : 'Baru-baru ini';
-        baseLogs.push(`>> Membaca rekam jejak: ${s.name} (${dateStr})`);
+        const dateStr = s.completedAt ? new Date(s.completedAt).toLocaleDateString() : 'Recently';
+        baseLogs.push(`>> Reading log: ${s.name} (${dateStr})`);
       });
-      baseLogs.push("Menghitung rasio repetisi & beban (Progressive Overload)...");
-      baseLogs.push("Menyesuaikan dengan energi hari ini...");
+      baseLogs.push("Calculating rep & load ratios (Progressive Overload)...");
+      baseLogs.push("Adjusting for today's energy...");
     } else {
-      baseLogs.push("Membangun fondasi program awal...");
+      baseLogs.push("Building your initial program...");
     }
-    baseLogs.push("Menyelaraskan dengan alat di gym...");
-    baseLogs.push("Finalisasi racikan AI...");
+    baseLogs.push("Syncing with your gym equipment...");
+    baseLogs.push("Finalizing Yono's workout...");
 
     let i = 0;
     const interval = setInterval(() => {
@@ -119,21 +139,34 @@ function LoadingLogs({ sessions }: { sessions: WorkoutSession[] | undefined }) {
 
 export default function TodayPage() {
   const router = useRouter();
-  const [selectedFocus, setSelectedFocus] = useState<string | null>(null);
-  const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [selectedEnergy, setSelectedEnergy] = useState<string | null>(null);
-  const [selectedEquipment, setSelectedEquipment] = useState("full");
+  const [selectedFocus, setSelectedFocus] = useState<string | null>(() => getWorkoutPrefs()?.focus ?? null);
+  const [selectedTime, setSelectedTime] = useState<string | null>(() => getWorkoutPrefs()?.time ?? null);
+  const [selectedEnergy, setSelectedEnergy] = useState<string | null>(() => getWorkoutPrefs()?.energy ?? "okay");
+  const [selectedEquipment, setSelectedEquipment] = useState(() => getWorkoutPrefs()?.equipment ?? "full");
   const [generationState, setGenerationState] = useState<GenerationState>("idle");
   const [suggestion, setSuggestion] = useState<unknown | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [greetingCopy] = useState(() => getCopy("greeting"));
   const [gymId] = useState(() => getSelectedGymId());
+  const [templates, setTemplates] = useState<WorkoutTemplate[]>(() => getTemplates());
 
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [importText, setImportText] = useState("");
   const [importState, setImportState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [importResult, setImportResult] = useState<BulkImportLogResult | null>(null);
   const [importError, setImportError] = useState("");
+  const [showReversePrompt, setShowReversePrompt] = useState(false);
+  const [promptCopied, setPromptCopied] = useState(false);
+
+  // Persist last-used generation preferences for smart defaults
+  useEffect(() => {
+    saveWorkoutPrefs({
+      focus: selectedFocus,
+      time: selectedTime,
+      energy: selectedEnergy,
+      equipment: selectedEquipment,
+    });
+  }, [selectedFocus, selectedTime, selectedEnergy, selectedEquipment]);
 
   // Live queries from IndexedDB
   const activeSession = useLiveQuery(
@@ -159,12 +192,59 @@ export default function TodayPage() {
     ? Math.floor((Date.now() - (recentSessions[0].completedAt ?? 0)) / (1000 * 60 * 60 * 24))
     : null;
 
-  const getGreeting = () => {
+  const workoutStreak = (() => {
+    if (!recentSessions || recentSessions.length === 0) return 0;
+    let streak = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = 0; i < 30; i++) {
+      const checkDate = new Date(today);
+      checkDate.setDate(today.getDate() - i);
+      const dayStart = checkDate.getTime();
+      const dayEnd = dayStart + 86400000;
+      const hasSession = recentSessions.some(
+        (s) => s.completedAt && s.completedAt >= dayStart && s.completedAt < dayEnd
+      );
+      if (hasSession) {
+        streak++;
+      } else if (i === 0) {
+        continue;
+      } else {
+        break;
+      }
+    }
+    return streak;
+  })();
+
+  const getYonoGreeting = () => {
     const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 17) return "Good afternoon";
-    return "Good evening";
+    const name = profile?.displayName || "Athlete";
+    const daysGap = daysSinceLastWorkout;
+
+    if (daysGap === 0) {
+      if (hour < 12) return { line: `Morning, ${name}`, sub: "Two-a-day? Let's go." };
+      if (hour < 17) return { line: `Hey ${name}`, sub: "Second round today?" };
+      return { line: `Still grinding, ${name}?`, sub: "Respect the hustle." };
+    }
+    if (daysGap === 1) {
+      if (hour < 12) return { line: `Morning, ${name}`, sub: "Build on yesterday's work." };
+      if (hour < 17) return { line: `Hey ${name}`, sub: "Day 2 energy. Let's go." };
+      return { line: `Evening, ${name}`, sub: "Keep the momentum." };
+    }
+    if (daysGap !== null && daysGap <= 3) {
+      if (hour < 12) return { line: `Morning, ${name}`, sub: `${daysGap} days off. Time to move.` };
+      return { line: `Hey ${name}`, sub: `Been ${daysGap} days. Ready to fire it up?` };
+    }
+    if (daysGap !== null) {
+      return { line: `Welcome back, ${name}`, sub: `${daysGap} days is long enough. Let's go.` };
+    }
+
+    if (hour < 12) return { line: `Morning, ${name}`, sub: "Fresh start. Let's make it count." };
+    if (hour < 17) return { line: `Hey ${name}`, sub: "Yono's ready when you are." };
+    return { line: `Evening, ${name}`, sub: "Night session energy." };
   };
+
+  const yonoGreeting = getYonoGreeting();
 
   const handleGenerate = async () => {
     if (!selectedFocus) {
@@ -405,6 +485,106 @@ export default function TodayPage() {
     router.push(`/workout/${sessionId}`);
   };
 
+  const handleRepeatLastWorkout = async () => {
+    const source = recentSessions?.[0];
+    if (!source) return;
+
+    const now = Date.now();
+    const sessionId = crypto.randomUUID();
+    const sourceExercises = await db.sessionExercises
+      .where("sessionId")
+      .equals(source.id)
+      .sortBy("order");
+
+    await db.transaction(
+      "rw",
+      [db.workoutSessions, db.sessionExercises],
+      async () => {
+        await db.workoutSessions.add({
+          id: sessionId,
+          name: source.name,
+          gymId: source.gymId ?? "ftl",
+          status: "active",
+          source: "duplicate",
+          focus: source.focus,
+          energy: selectedEnergy as "low" | "okay" | "strong" | undefined,
+          estimatedMinutes: source.estimatedMinutes,
+          startedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        for (const ex of sourceExercises) {
+          await db.sessionExercises.add({
+            id: crypto.randomUUID(),
+            sessionId,
+            exerciseId: ex.exerciseId,
+            order: ex.order,
+            status: "pending",
+            targetSets: ex.targetSets,
+            repMin: ex.repMin,
+            repMax: ex.repMax,
+            suggestedWeightKg: ex.suggestedWeightKg,
+            restSeconds: ex.restSeconds,
+            notes: ex.notes,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+    );
+
+    router.push(`/workout/${sessionId}`);
+  };
+
+  const handleStartFromTemplate = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    const id = e.currentTarget.dataset.templateId;
+    const template = templates.find((t) => t.id === id);
+    if (!template) return;
+
+    const now = Date.now();
+    const sessionId = crypto.randomUUID();
+
+    await db.transaction(
+      "rw",
+      [db.workoutSessions, db.sessionExercises],
+      async () => {
+        await db.workoutSessions.add({
+          id: sessionId,
+          name: template.name,
+          gymId: gymId ?? "ftl",
+          status: "active",
+          source: "template",
+          focus: template.focus ?? [],
+          energy: selectedEnergy as "low" | "okay" | "strong" | undefined,
+          startedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        for (const ex of template.exercises) {
+          await db.sessionExercises.add({
+            id: crypto.randomUUID(),
+            sessionId,
+            exerciseId: ex.exerciseId,
+            order: ex.order,
+            status: "pending",
+            targetSets: ex.targetSets,
+            repMin: ex.repMin,
+            repMax: ex.repMax,
+            suggestedWeightKg: ex.suggestedWeightKg,
+            restSeconds: ex.restSeconds,
+            notes: ex.notes,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+    );
+
+    router.push(`/workout/${sessionId}`);
+  };
+
   const handleImportLog = async () => {
     if (!importText.trim()) return;
     setImportState("loading");
@@ -430,6 +610,16 @@ export default function TodayPage() {
     } catch (err) {
       setImportState("error");
       setImportError((err as Error).message || "Failed to parse log");
+    }
+  };
+
+  const handleCopyReversePrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(REVERSE_IMPORT_PROMPT);
+      setPromptCopied(true);
+      setTimeout(() => setPromptCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable — ignore
     }
   };
 
@@ -495,7 +685,7 @@ export default function TodayPage() {
   };
 
   return (
-    <div className="relative max-w-md mx-auto min-h-screen pb-24 bg-background overflow-hidden">
+    <div className="relative max-w-md mx-auto min-h-dvh bg-background overflow-hidden pb-safe-nav">
       {/* Decorative Blur Backgrounds */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-5%] left-[-10%] w-[200px] h-[200px] bg-primary/15 rounded-full blur-[60px]" />
@@ -505,20 +695,16 @@ export default function TodayPage() {
       {/* Header */}
       <div className="relative z-10 flex items-end justify-between px-4 pt-12 mb-10">
         <div>
-          <p className="text-[10px] font-bold tracking-widest text-primary uppercase mb-1">
-            {getGreeting()}
-          </p>
           <h1 className="text-3xl font-extrabold tracking-tight text-foreground leading-tight">
-            {profile?.displayName || "Athlete"}
+            {yonoGreeting.line}
           </h1>
-          {daysSinceLastWorkout !== null && (
-            <p className="text-sm font-medium text-muted-foreground mt-2">
-              {daysSinceLastWorkout === 0
-                ? "Trained today 🔥"
-                : daysSinceLastWorkout === 1
-                ? "Trained yesterday"
-                : `${daysSinceLastWorkout} days since last session`}
-            </p>
+          <p className="text-sm font-medium text-muted-foreground mt-2">
+            {yonoGreeting.sub}
+          </p>
+          {workoutStreak >= 2 && (
+            <div className="inline-flex items-center gap-1 mt-2 px-2.5 py-1 bg-accent/10 rounded-full">
+              <span className="text-xs font-bold text-accent">{workoutStreak}-day streak 🔥</span>
+            </div>
           )}
         </div>
         
@@ -556,6 +742,96 @@ export default function TodayPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Repeat last workout banner */}
+      <AnimatePresence>
+        {!activeSession && recentSessions && recentSessions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="mx-4 mb-4"
+          >
+            <Card className="p-4 border-primary/20">
+              <div className="flex items-center justify-between">
+                <div className="min-w-0 mr-3">
+                  <p className="text-xs font-medium text-primary uppercase tracking-wide">
+                    Repeat last workout
+                  </p>
+                  <p className="font-semibold text-foreground truncate mt-0.5">
+                    {recentSessions[0].name}
+                  </p>
+                </div>
+                <Button
+                  id="btn-repeat-workout"
+                  size="sm"
+                  onClick={handleRepeatLastWorkout}
+                  className="shrink-0"
+                >
+                  <RepeatIcon className="w-4 h-4 mr-1" />
+                  Start
+                </Button>
+              </div>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Templates */}
+      {templates.length > 0 && (
+        <div className="px-4 mb-6 relative z-10">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-bold text-foreground flex items-center gap-1.5">
+              <BookmarkIcon className="w-4 h-4 text-primary" />
+              Templates
+            </h2>
+            <button
+              onClick={() => setTemplates(getTemplates())}
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Refresh
+            </button>
+          </div>
+          <div className="space-y-2">
+            {templates.map((template) => (
+              <Card key={template.id} className="p-3.5 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-foreground text-sm truncate">{template.name}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {template.exercises.length} exercises
+                    {template.focus && template.focus.length > 0 ? ` · ${template.focus.join(", ")}` : ""}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    size="sm"
+                    data-template-id={template.id}
+                    onClick={handleStartFromTemplate}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    <PlayIcon className="w-3.5 h-3.5 mr-1" />
+                    Start
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      deleteTemplate(template.id);
+                      setTemplates(getTemplates());
+                    }}
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <TrashIcon className="w-4 h-4" />
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Muscle recovery heatmap */}
+      <MuscleRecoveryPanel />
 
       {/* Training focus selector */}
       <div className="px-4 mb-6 relative z-10">
@@ -710,10 +986,10 @@ export default function TodayPage() {
               <YonoAnimation state="thinking" />
             </div>
             <h2 className="text-2xl font-extrabold text-foreground animate-pulse mb-2 text-center px-4">
-              Meracik Latihan...
+              Building your workout...
             </h2>
             <p className="text-muted-foreground text-center px-8 text-sm max-w-[300px]">
-              Yono sedang menyusun program terbaik berdasarkan kemampuan dan riwayatmu.
+              Yono is designing the best session based on your ability and workout history.
             </p>
             
             <LoadingLogs sessions={recentSessions} />
@@ -813,6 +1089,65 @@ export default function TodayPage() {
                   Paste your gym log from ChatGPT, Claude, or any AI you use to track workouts.
                 </p>
               </div>
+
+              {/* Reverse prompt — makes your AI output a Yono-ready format */}
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+                <button
+                  id="btn-toggle-reverse-prompt"
+                  onClick={() => {
+                    setShowReversePrompt((v) => !v);
+                    setPromptCopied(false);
+                  }}
+                  className="w-full flex items-center justify-between text-sm font-semibold text-primary"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <InfoIcon className="w-4 h-4" />
+                    Prompt template for your AI
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {showReversePrompt ? "Hide" : "Show"}
+                  </span>
+                </button>
+
+                <AnimatePresence>
+                  {showReversePrompt && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <p className="text-xs text-muted-foreground mt-3 mb-2 leading-relaxed">
+                        Paste this into ChatGPT/Claude and ask it to log your workout. The
+                        result will import into Yono almost perfectly.
+                      </p>
+                      <pre className="whitespace-pre-wrap break-words text-[11px] leading-relaxed bg-background border border-border rounded-lg p-3 text-foreground/90 max-h-44 overflow-y-auto">
+                        {REVERSE_IMPORT_PROMPT}
+                      </pre>
+                      <Button
+                        id="btn-copy-reverse-prompt"
+                        onClick={handleCopyReversePrompt}
+                        variant="outline"
+                        size="sm"
+                        className="mt-2 w-full h-9 rounded-lg text-xs font-semibold"
+                      >
+                        {promptCopied ? (
+                          <>
+                            <CheckIcon className="w-3.5 h-3.5 mr-1.5 text-emerald-500" />
+                            Copied!
+                          </>
+                        ) : (
+                          <>
+                            <CopyIcon className="w-3.5 h-3.5 mr-1.5" />
+                            Copy prompt
+                          </>
+                        )}
+                      </Button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
               <textarea
                 value={importText}
                 onChange={(e) => setImportText(e.target.value)}
@@ -938,6 +1273,9 @@ function WorkoutSuggestionCard({
   const [detailsExId, setDetailsExId] = useState<string | null>(null);
   const [showAddSelector, setShowAddSelector] = useState(false);
 
+  const profile = useLiveQuery(() => db.profiles.get("main-user"), []);
+  const weightUnit: WeightUnit = profile?.preferredWeightUnit ?? "kg";
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 30 }}
@@ -996,7 +1334,9 @@ function WorkoutSuggestionCard({
                       : ex.targetRepMin
                       ? ` × ${ex.targetRepMin}+`
                       : ""}
-                    {ex.suggestedWeightKg ? ` · ${ex.suggestedWeightKg} kg` : ""}
+                    {ex.suggestedWeightKg
+                      ? ` · ${Math.round(kgToDisplay(ex.suggestedWeightKg, weightUnit) * 100) / 100} ${weightUnit}`
+                      : ""}
                     {" · "}{ex.restSeconds}s rest
                   </p>
                 </div>

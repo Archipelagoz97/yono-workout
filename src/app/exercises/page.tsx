@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { exercises as exerciseCatalog } from "@/data/exercises.compact";
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { ExerciseDetailsDialog } from "@/components/workout/ExerciseDetailsDialog";
 
 const categories = [...new Set(exerciseCatalog.map((e) => e.category))].sort();
 
@@ -13,6 +14,7 @@ export default function ExercisesPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [detailsExId, setDetailsExId] = useState<string | null>(null);
 
   const filtered = exerciseCatalog.filter((e) => {
     const matchesSearch =
@@ -24,7 +26,7 @@ export default function ExercisesPage() {
   });
 
   return (
-    <div className="min-h-screen yono-gradient content-with-nav">
+    <div className="min-h-dvh yono-gradient content-with-nav">
       <div className="px-4 pt-12 pb-4">
         <h1 className="text-2xl font-display font-bold text-foreground mb-1">Exercises</h1>
         <p className="text-muted-foreground text-sm mb-4">
@@ -66,7 +68,11 @@ export default function ExercisesPage() {
 
       <div className="px-4 space-y-2 pb-4">
         {filtered.map((exercise) => (
-          <Card key={exercise.id} className="p-4">
+          <Card
+            key={exercise.id}
+            className="p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+            onClick={() => setDetailsExId(exercise.id)}
+          >
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-foreground text-sm">{exercise.name}</p>
@@ -99,6 +105,11 @@ export default function ExercisesPage() {
           </div>
         )}
       </div>
+
+      <ExerciseDetailsDialog
+        exerciseId={detailsExId}
+        onOpenChange={(open) => !open && setDetailsExId(null)}
+      />
     </div>
   );
 }

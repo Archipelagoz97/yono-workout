@@ -2,12 +2,20 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { DownloadIcon, UploadIcon, DatabaseIcon, ShieldIcon, MoonIcon, SunIcon, BrainIcon, TrashIcon, ChevronRightIcon } from "lucide-react";
+import { DownloadIcon, UploadIcon, DatabaseIcon, ShieldIcon, MoonIcon, SunIcon, BrainIcon, TrashIcon, ChevronRightIcon, PencilIcon, UserIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -20,6 +28,19 @@ import db from "@/db/database";
 import { exportBackup, downloadBackup, readBackupFile, validateAndParseBackup, importBackupReplace, importBackupMerge } from "@/lib/backup";
 import { getTheme, setTheme } from "@/lib/storage";
 import { YonoAnimation } from "@/components/yono/YonoAnimation";
+import type { Profile } from "@/types";
+
+const EXPERIENCE_OPTIONS = [
+  { id: "beginner", label: "Beginner" },
+  { id: "intermediate", label: "Intermediate" },
+  { id: "advanced", label: "Advanced" },
+] as const;
+
+const PERSONALITY_OPTIONS = [
+  { id: "quiet", label: "Quiet", emoji: "🤫" },
+  { id: "balanced", label: "Balanced", emoji: "😊" },
+  { id: "playful", label: "Playful", emoji: "🎉" },
+] as const;
 
 export default function ProfilePage() {
   const [isExporting, setIsExporting] = useState(false);
@@ -30,12 +51,55 @@ export default function ProfilePage() {
   const [importResult, setImportResult] = useState<string | null>(null);
   const [showClearMemories, setShowClearMemories] = useState(false);
   const [currentTheme, setCurrentTheme] = useState(() => getTheme());
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [editForm, setEditForm] = useState({
+    displayName: "",
+    experienceLevel: "intermediate" as "beginner" | "intermediate" | "advanced",
+    goal: "",
+    yonoPersonality: "balanced" as "quiet" | "balanced" | "playful",
+    preferredWeightUnit: "kg" as "kg" | "lb",
+    preferredDistanceUnit: "km" as "km" | "mi",
+  });
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   const profile = useLiveQuery(() => db.profiles.get("main-user"), []);
   const memories = useLiveQuery(() => db.aiMemories.toArray(), []);
   const sessionCount = useLiveQuery(() => db.workoutSessions.where("status").equals("completed").count(), []);
   const setCount = useLiveQuery(() => db.workoutSets.count(), []);
   const backupMeta = useLiveQuery(() => db.backupMetadata.get("backup-status"), []);
+
+  const openEditProfile = () => {
+    if (!profile) return;
+    setEditForm({
+      displayName: profile.displayName ?? "",
+      experienceLevel: profile.experienceLevel ?? "intermediate",
+      goal: profile.goal ?? "",
+      yonoPersonality: profile.yonoPersonality ?? "balanced",
+      preferredWeightUnit: profile.preferredWeightUnit ?? "kg",
+      preferredDistanceUnit: profile.preferredDistanceUnit ?? "km",
+    });
+    setShowEditProfile(true);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!profile) return;
+    setIsSavingProfile(true);
+    try {
+      const patch: Partial<Profile> = {
+        displayName: editForm.displayName.trim() || "Athlete",
+        experienceLevel: editForm.experienceLevel,
+        goal: editForm.goal.trim() || undefined,
+        yonoPersonality: editForm.yonoPersonality,
+        preferredWeightUnit: editForm.preferredWeightUnit,
+        preferredDistanceUnit: editForm.preferredDistanceUnit,
+        updatedAt: Date.now(),
+      };
+      await db.profiles.update("main-user", patch);
+      setShowEditProfile(false);
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -104,19 +168,69 @@ export default function ProfilePage() {
     : null;
 
   return (
-    <div className="min-h-screen yono-gradient content-with-nav">
+    <div className="min-h-dvh yono-gradient content-with-nav">
       {/* Header */}
       <div className="px-4 pt-12 pb-6">
         <div className="flex items-center gap-4">
           <YonoAnimation state="idle" size={64} />
-          <div>
+          <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-display font-bold text-foreground">Profile</h1>
             <p className="text-muted-foreground text-sm">
               {sessionCount ?? 0} sessions · {setCount ?? 0} sets logged
             </p>
           </div>
+          <Button
+            id="btn-edit-profile"
+            variant="outline"
+            size="sm"
+            onClick={openEditProfile}
+            className="shrink-0 rounded-xl"
+          >
+            <PencilIcon className="w-3.5 h-3.5 mr-1.5" />
+            Edit
+          </Button>
         </div>
       </div>
+
+      {/* Profile summary */}
+      {profile && (
+        <motion.div
+          className="px-4 mb-6"
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, margin: "-30px" }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+        >
+          <Card className="p-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+                <UserIcon className="w-6 h-6 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-foreground">{profile.displayName}</p>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  {profile.experienceLevel && (
+                    <Badge variant="secondary" className="text-[10px] capitalize">
+                      {profile.experienceLevel}
+                    </Badge>
+                  )}
+                  {profile.goal && (
+                    <Badge variant="outline" className="text-[10px] capitalize">
+                      {profile.goal.replace(/_/g, " ")}
+                    </Badge>
+                  )}
+                  <Badge variant="outline" className="text-[10px]">
+                    {profile.preferredWeightUnit} / {profile.preferredDistanceUnit}
+                  </Badge>
+                </div>
+              </div>
+              <Badge variant="secondary" className="shrink-0 capitalize text-[10px]">
+                {profile.yonoPersonality} Yono
+              </Badge>
+            </div>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Storage & Backup */}
       <motion.div
@@ -398,6 +512,140 @@ export default function ProfilePage() {
                 : importMode === "replace"
                 ? "Yes, replace all"
                 : "Yes, merge"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit profile dialog */}
+      <Dialog open={showEditProfile} onOpenChange={setShowEditProfile}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit profile</DialogTitle>
+            <DialogDescription>
+              How Yono understands you — your name, experience, goal, and units.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-2">
+            <div>
+              <Label htmlFor="edit-display-name" className="text-xs text-muted-foreground">
+                Display name
+              </Label>
+              <Input
+                id="edit-display-name"
+                value={editForm.displayName}
+                onChange={(e) => setEditForm((f) => ({ ...f, displayName: e.target.value }))}
+                placeholder="e.g. Chris"
+                className="mt-1.5"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Experience level</Label>
+              <div className="grid grid-cols-3 gap-2 mt-1.5">
+                {EXPERIENCE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setEditForm((f) => ({ ...f, experienceLevel: opt.id }))}
+                    className={`py-2 rounded-xl text-xs font-semibold border transition-all capitalize ${
+                      editForm.experienceLevel === opt.id
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="edit-goal" className="text-xs text-muted-foreground">
+                Goal
+              </Label>
+              <Input
+                id="edit-goal"
+                value={editForm.goal}
+                onChange={(e) => setEditForm((f) => ({ ...f, goal: e.target.value }))}
+                placeholder="e.g. Build muscle"
+                className="mt-1.5"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Yono personality</Label>
+              <div className="grid grid-cols-3 gap-2 mt-1.5">
+                {PERSONALITY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setEditForm((f) => ({ ...f, yonoPersonality: opt.id }))}
+                    className={`py-2 rounded-xl text-xs font-semibold border transition-all ${
+                      editForm.yonoPersonality === opt.id
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {opt.emoji} {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Weight unit</Label>
+              <div className="grid grid-cols-2 gap-2 mt-1.5">
+                {(["kg", "lb"] as const).map((u) => (
+                  <button
+                    key={u}
+                    onClick={() => setEditForm((f) => ({ ...f, preferredWeightUnit: u }))}
+                    className={`py-2 rounded-xl text-sm font-semibold border transition-all ${
+                      editForm.preferredWeightUnit === u
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {u === "kg" ? "Kilograms (kg)" : "Pounds (lb)"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs text-muted-foreground">Distance unit</Label>
+              <div className="grid grid-cols-2 gap-2 mt-1.5">
+                {(["km", "mi"] as const).map((u) => (
+                  <button
+                    key={u}
+                    onClick={() => setEditForm((f) => ({ ...f, preferredDistanceUnit: u }))}
+                    className={`py-2 rounded-xl text-sm font-semibold border transition-all ${
+                      editForm.preferredDistanceUnit === u
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted border-border text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {u === "km" ? "Kilometers (km)" : "Miles (mi)"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-2 mt-4">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowEditProfile(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              id="btn-save-profile"
+              className="flex-1"
+              onClick={handleSaveProfile}
+              disabled={isSavingProfile}
+            >
+              {isSavingProfile ? "Saving..." : "Save changes"}
             </Button>
           </div>
         </DialogContent>

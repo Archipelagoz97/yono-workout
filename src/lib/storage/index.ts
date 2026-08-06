@@ -72,6 +72,7 @@ export async function requestStoragePersistence(): Promise<boolean> {
 const ACTIVE_WORKOUT_KEY = "yono_active_workout";
 const THEME_KEY = "yono_theme";
 const GYM_KEY = "yono_selected_gym";
+const WORKOUT_PREFS_KEY = "yono_workout_prefs";
 
 export interface ActiveWorkoutState {
   sessionId: string;
@@ -139,5 +140,31 @@ export function setTheme(theme: "light" | "dark" | "system"): void {
     localStorage.setItem(THEME_KEY, theme);
   } catch {
     // Non-critical
+  }
+}
+
+// Last-used workout generation preferences (smart defaults)
+export interface WorkoutPrefs {
+  focus?: string | null;
+  time?: string | null;
+  energy?: string | null;
+  equipment?: string;
+}
+
+export function saveWorkoutPrefs(prefs: WorkoutPrefs): void {
+  try {
+    localStorage.setItem(WORKOUT_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // Non-critical
+  }
+}
+
+export function getWorkoutPrefs(): WorkoutPrefs | null {
+  try {
+    const raw = localStorage.getItem(WORKOUT_PREFS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as WorkoutPrefs;
+  } catch {
+    return null;
   }
 }

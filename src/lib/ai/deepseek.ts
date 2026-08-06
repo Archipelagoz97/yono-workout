@@ -153,3 +153,100 @@ export async function callDeepSeekJSON<T>(
 
   return validator(parsed);
 }
+
+/**
+ * Call DeepSeek with streaming enabled. Yields text deltas as they arrive.
+ * Server-side only. Streams plain text (not JSON).
+ */
+export async function* callDeepSeekStream(
+  options: DeepSeekRequestOptions
+): AsyncGenerator<string> {
+  if (!DEEPSEEK_API_KEY) {
+    throw new DeepSeekError(
+      "DEEPSEEK_API_KEY is not configured",
+      undefined,
+      "MISSING_API_KEY"
+    );
+  }
+
+  const {
+    messages,
+    temperature = 0.7,
+    maxTokens = 2048,
+    timeoutMs = 60000,
+  } = options;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const body: Record<string, unknown> = {
+      model: DEEPSEEK_MODEL,
+      messages,
+      temperature,
+      max_tokens: maxTokens,
+      stream: true,
+    };
+
+    const response = await fetch(`${DEEPSEEK_API_URL}/v1/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok || !response.body) {
+      const errorText = await response.text().catch(() => "Unknown error");
+      throw new DeepSeekError(
+        `DeepSeek API error: ${response.status} ${errorText}`,
+        response.status
+      );
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === "[DONE]") continue;
+        try {
+          const json = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string } }>;
+          };
+          const delta = json?.choices?.[0]?.delta?.content;
+          if (typeof delta === "string" && delta.length > 0) {
+            yield delta;
+          }
+        } catch {
+          // Ignore malformed SSE chunks
+        }
+      }
+    }
+  } catch (error) {
+    if (error instanceof DeepSeekError) throw error;
+    if ((error as Error).name === "AbortError") {
+      throw new DeepSeekError("Request timed out", undefined, "TIMEOUT");
+    }
+    throw new DeepSeekError(
+      `Network error: ${(error as Error).message}`,
+      undefined,
+      "NETWORK_ERROR"
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}

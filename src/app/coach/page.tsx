@@ -2,13 +2,12 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { SendIcon, BrainIcon, PlusIcon, TrashIcon } from "lucide-react";
+import { SendIcon, BrainIcon, TrashIcon, MicIcon, StopCircleIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { YonoAnimation, type YonoState } from "@/components/yono/YonoAnimation";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { useSpeechRecognition, SPEECH_LANGUAGES, type SpeechLang } from "@/lib/speech";
 import db from "@/db/database";
 import { useLiveQuery } from "dexie-react-hooks";
 import { getCopy } from "@/data/yono-copy";
@@ -25,8 +24,23 @@ export default function CoachPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [yonoState, setYonoState] = useState<YonoState>("idle");
   const [localMessages, setLocalMessages] = useState<Message[]>([]);
+  const [streamingContent, setStreamingContent] = useState<string | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Voice input
+  const [speechLang, setSpeechLang] = useState<SpeechLang>("en-US");
+  const { supported: speechSupported, listening, interim, start, stop } =
+    useSpeechRecognition(
+      (text) => {
+        setInput((prev) => {
+          const base = prev.trim();
+          return base ? `${base} ${text}` : text;
+        });
+      },
+      speechLang
+    );
 
   // Load stored messages
   const storedMessages = useLiveQuery(
@@ -50,7 +64,7 @@ export default function CoachPage() {
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
     }
-  }, [localMessages]);
+  }, [localMessages, streamingContent]);
 
   const handleSend = async () => {
     const text = input.trim();
@@ -59,6 +73,7 @@ export default function CoachPage() {
     setInput("");
     setYonoState("thinking");
     setIsLoading(true);
+    setStreamingContent("");
 
     const userMsg: Message = {
       id: crypto.randomUUID(),
@@ -76,6 +91,8 @@ export default function CoachPage() {
       content: text,
       createdAt: userMsg.createdAt,
     });
+
+    const assistantId = crypto.randomUUID();
 
     try {
       // Get recent sessions for context
@@ -107,33 +124,75 @@ export default function CoachPage() {
         exerciseContext: [],
       };
 
-      const response = await fetch("/api/ai/coach", {
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const response = await fetch("/api/ai/coach/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
-        signal: AbortSignal.timeout(30000),
+        signal: controller.signal,
       });
 
-      if (!response.ok) {
+      if (!response.ok || !response.body) {
         throw new Error(`Coach error: ${response.status}`);
       }
 
-      const data = await response.json();
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let fullText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+
+        for (const ev of events) {
+          for (const line of ev.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+            const payload = trimmed.slice(5).trim();
+
+            let json: { delta?: string; error?: string; done?: boolean };
+            try {
+              json = JSON.parse(payload);
+            } catch {
+              continue;
+            }
+
+            if (json.error) throw new Error(json.error);
+            if (json.delta) {
+              fullText += json.delta;
+              setStreamingContent(fullText);
+            }
+          }
+        }
+      }
+
+      if (!fullText.trim()) {
+        throw new Error("Empty response");
+      }
+
       const assistantMsg: Message = {
-        id: crypto.randomUUID(),
+        id: assistantId,
         role: "assistant",
-        content: data.message,
+        content: fullText,
         createdAt: Date.now(),
       };
 
       setLocalMessages((prev) => [...prev, assistantMsg]);
+      setStreamingContent(null);
       setYonoState("idle");
 
       // Save assistant message
       await db.chatMessages.add({
-        id: assistantMsg.id,
+        id: assistantId,
         role: "assistant",
-        content: data.message,
+        content: fullText,
         createdAt: assistantMsg.createdAt,
       });
 
@@ -160,16 +219,20 @@ export default function CoachPage() {
       };
 
       setLocalMessages((prev) => [...prev, errorMsg]);
+      setStreamingContent(null);
       setYonoState("error");
       setTimeout(() => setYonoState("idle"), 2000);
     } finally {
       setIsLoading(false);
+      abortRef.current = null;
     }
   };
 
   const handleClearChat = async () => {
+    abortRef.current?.abort();
     await db.chatMessages.clear();
     setLocalMessages([]);
+    setStreamingContent(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -179,8 +242,10 @@ export default function CoachPage() {
     }
   };
 
+  const streaming = streamingContent !== null;
+
   return (
-    <div className="flex flex-col h-screen bg-background content-with-nav">
+    <div className="flex flex-col h-dvh bg-background content-with-nav">
       {/* Header */}
       <div className="px-4 pt-12 pb-3 border-b border-border bg-background/95 backdrop-blur-sm sticky top-0 z-10">
         <div className="flex items-center justify-between">
@@ -224,7 +289,7 @@ export default function CoachPage() {
         className="flex-1 overflow-y-auto px-4 py-4 space-y-3"
         id="chat-messages"
       >
-        {localMessages.length === 0 && (
+        {localMessages.length === 0 && !streaming && (
           <div className="text-center py-12">
             <YonoAnimation state="greeting" size={100} className="mx-auto" />
             <h2 className="text-lg font-display font-semibold text-foreground mt-4">
@@ -268,7 +333,7 @@ export default function CoachPage() {
                 </div>
               )}
               <div
-                className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+                className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words ${
                   msg.role === "user"
                     ? "bg-primary text-primary-foreground rounded-br-sm"
                     : "bg-card border border-border text-foreground rounded-bl-sm"
@@ -280,26 +345,33 @@ export default function CoachPage() {
           ))}
         </AnimatePresence>
 
-        {isLoading && (
+        {/* Streaming response bubble */}
+        {streaming && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
             className="flex justify-start"
           >
             <div className="w-7 h-7 shrink-0 mr-2 mt-1">
               <YonoAnimation state="thinking" size={28} />
             </div>
-            <div className="bg-card border border-border px-4 py-3 rounded-2xl rounded-bl-sm">
-              <div className="flex gap-1">
-                {[0, 1, 2].map((i) => (
-                  <motion.div
-                    key={i}
-                    animate={{ y: [0, -4, 0] }}
-                    transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
-                    className="w-1.5 h-1.5 bg-muted-foreground rounded-full"
-                  />
-                ))}
-              </div>
+            <div className="max-w-[80%] bg-card border border-border px-4 py-3 rounded-2xl rounded-bl-sm text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground">
+              {streamingContent}
+              {streamingContent && streamingContent.length === 0 && (
+                <span className="inline-flex gap-1">
+                  {[0, 1, 2].map((i) => (
+                    <motion.span
+                      key={i}
+                      animate={{ y: [0, -4, 0] }}
+                      transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
+                      className="w-1.5 h-1.5 bg-muted-foreground rounded-full inline-block"
+                    />
+                  ))}
+                </span>
+              )}
+              {streamingContent && streamingContent.length > 0 && (
+                <span className="inline-block w-1.5 h-4 bg-primary/70 animate-pulse ml-0.5 align-middle" />
+              )}
             </div>
           </motion.div>
         )}
@@ -307,7 +379,61 @@ export default function CoachPage() {
 
       {/* Input */}
       <div className="px-4 pb-4 pt-2 border-t border-border bg-background/95 backdrop-blur-sm">
+        {listening && (
+          <div className="flex items-center justify-between mb-2 px-1">
+            <div className="flex items-center gap-1.5">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Listening ({speechLang === "en-US" ? "English" : "Bahasa Indonesia"})…
+              </span>
+            </div>
+            {interim && (
+              <span className="text-xs italic text-muted-foreground truncate max-w-[60%]">
+                {interim}
+              </span>
+            )}
+          </div>
+        )}
         <div className="flex gap-2">
+          {speechSupported && (
+            <>
+              <Button
+                id="btn-voice-coach"
+                onClick={() => (listening ? stop() : start())}
+                disabled={isLoading}
+                size="icon"
+                className={`h-11 w-11 rounded-2xl shrink-0 ${
+                  listening ? "bg-red-500 hover:bg-red-600 text-white" : ""
+                }`}
+                aria-label={listening ? "Stop voice input" : "Start voice input"}
+              >
+                {listening ? (
+                  <StopCircleIcon className="w-5 h-5" />
+                ) : (
+                  <MicIcon className="w-5 h-5" />
+                )}
+              </Button>
+              <Button
+                id="btn-voice-lang"
+                onClick={() =>
+                  setSpeechLang((prev) =>
+                    prev === "en-US" ? "id-ID" : "en-US"
+                  )
+                }
+                disabled={isLoading}
+                size="icon"
+                variant="ghost"
+                className="h-11 w-11 rounded-2xl shrink-0 border border-border text-xs font-semibold"
+                title="Voice language"
+                aria-label="Toggle voice input language"
+              >
+                {speechLang === "en-US" ? "EN" : "ID"}
+              </Button>
+            </>
+          )}
           <Input
             ref={inputRef}
             id="coach-input"

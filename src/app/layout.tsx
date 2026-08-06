@@ -4,6 +4,7 @@ import "./globals.css";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { DbProvider } from "@/components/providers/DbProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
+import { OnboardingProvider } from "@/components/onboarding/OnboardingProvider";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -70,8 +71,9 @@ export default function RootLayout({
       <body className={`${inter.variable} font-sans antialiased`}>
         <ThemeProvider>
           <DbProvider>
+            <OnboardingProvider>
             {/* Desktop layout: sidebar + content */}
-            <div className="flex min-h-screen">
+            <div className="flex min-h-dvh">
               {/* Desktop sidebar (hidden on mobile) */}
               <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 lg:z-50">
                 <DesktopSidebar />
@@ -79,7 +81,7 @@ export default function RootLayout({
 
               {/* Main content */}
               <main className="flex-1 lg:ml-64">
-                <div className="min-h-screen max-w-2xl mx-auto lg:max-w-3xl">
+                <div className="min-h-dvh max-w-2xl mx-auto lg:max-w-3xl">
                   {children}
                 </div>
               </main>
@@ -89,6 +91,7 @@ export default function RootLayout({
             <div className="lg:hidden fixed bottom-0 left-0 right-0 z-50">
               <BottomNav />
             </div>
+            </OnboardingProvider>
           </DbProvider>
         </ThemeProvider>
       </body>

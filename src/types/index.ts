@@ -7,11 +7,16 @@ export interface Profile {
   displayName: string;
   goal?: string;
   experienceLevel?: "beginner" | "intermediate" | "advanced";
-  preferredWeightUnit: "kg";
+  preferredWeightUnit: "kg" | "lb";
   preferredDistanceUnit: "km" | "mi";
   yonoPersonality: "quiet" | "balanced" | "playful";
   createdAt: number;
   updatedAt: number;
+}
+
+export interface AchievementUnlock {
+  code: string;
+  earnedAt: number;
 }
 
 export interface Gym {
@@ -66,7 +71,7 @@ export interface WorkoutSession {
   name: string;
   gymId?: string;
   status: "draft" | "active" | "paused" | "completed" | "cancelled";
-  source: "ai" | "manual" | "duplicate" | "fallback";
+  source: "ai" | "manual" | "duplicate" | "fallback" | "template";
   focus: string[];
   energy?: "low" | "okay" | "strong";
   discomfortAreas?: string[];
@@ -90,6 +95,7 @@ export interface SessionExercise {
   suggestedWeightKg?: number;
   restSeconds?: number;
   notes?: string;
+  supersetGroup?: string;
   replacedByExerciseId?: string;
   createdAt: number;
   updatedAt: number;

@@ -4,6 +4,8 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
+import { useLiveQuery } from "dexie-react-hooks";
+import db from "@/db/database";
 import {
   HomeIcon,
   CalendarIcon,
@@ -23,6 +25,12 @@ const navItems = [
 export function BottomNav() {
   const pathname = usePathname();
 
+  // Active workout indicator
+  const activeSession = useLiveQuery(
+    () => db.workoutSessions.where("status").equals("active").first(),
+    []
+  );
+
   return (
     <nav
       className="bg-card/95 backdrop-blur-md border-t border-border"
@@ -34,6 +42,7 @@ export function BottomNav() {
       <div className="flex items-stretch h-16">
         {navItems.map(({ href, label, icon: Icon }) => {
           const isActive = pathname === href || pathname.startsWith(href + "/");
+          const showIndicator = href === "/today" && !!activeSession;
 
           return (
             <Link
@@ -56,18 +65,28 @@ export function BottomNav() {
                   transition={{ type: "spring", stiffness: 400, damping: 30 }}
                 />
               )}
-              <motion.div
-                animate={isActive ? { scale: 1.1 } : { scale: 1 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              >
-                <Icon
-                  className={cn(
-                    "w-5 h-5 transition-colors",
-                    isActive ? "stroke-primary" : "stroke-muted-foreground"
-                  )}
-                  strokeWidth={isActive ? 2.5 : 2}
-                />
-              </motion.div>
+              <div className="relative">
+                <motion.div
+                  animate={isActive ? { scale: 1.1 } : { scale: 1 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                >
+                  <Icon
+                    className={cn(
+                      "w-5 h-5 transition-colors",
+                      isActive ? "stroke-primary" : "stroke-muted-foreground"
+                    )}
+                    strokeWidth={isActive ? 2.5 : 2}
+                  />
+                </motion.div>
+                {showIndicator && (
+                  <motion.span
+                    animate={{ scale: [1, 1.35, 1] }}
+                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+                    className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-accent ring-2 ring-background"
+                    title="Workout in progress"
+                  />
+                )}
+              </div>
               <span className="text-[10px] font-medium leading-none">{label}</span>
             </Link>
           );
