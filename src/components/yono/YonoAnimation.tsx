@@ -3,6 +3,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { getExerciseArchetype } from "./ExerciseArchetypes";
 
 // ─────────────────────────────────────────────────────────
 // YONO ANIMATION COMPONENT
@@ -262,127 +263,42 @@ function YonoThinking() {
   );
 }
 
-type JointCoords = { h: [number,number]; s: [number,number]; p: [number,number]; k: [number,number]; f: [number,number]; e: [number,number]; w: [number,number] };
-
-function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
-  const getCoords = (): { start: JointCoords; end: JointCoords; duration: number } => {
-    switch (family) {
-      case "vertical_pull":
-        return {
-          start: { h: [60,25], s: [60,40], p: [60,80], k: [80,80], f: [80,110], e: [45,20], w: [60,10] },
-          end: { h: [60,25], s: [60,40], p: [60,80], k: [80,80], f: [80,110], e: [50,60], w: [60,40] },
-          duration: 2.5
-        };
-      case "horizontal_pull":
-      case "rear_delt":
-      case "rowing_cardio":
-        return {
-          start: { h: [50,25], s: [50,40], p: [50,80], k: [80,80], f: [80,110], e: [70,50], w: [90,50] },
-          end: { h: [45,25], s: [45,40], p: [50,80], k: [80,80], f: [80,110], e: [30,50], w: [50,55] },
-          duration: 2
-        };
-      case "horizontal_push":
-      case "generic_machine":
-        return {
-          start: { h: [30,75], s: [50,75], p: [90,75], k: [110,95], f: [110,110], e: [50,50], w: [50,30] },
-          end: { h: [30,75], s: [50,75], p: [90,75], k: [110,95], f: [110,110], e: [50,90], w: [50,70] },
-          duration: 2
-        };
-      case "vertical_push":
-        return {
-          start: { h: [60,25], s: [60,40], p: [60,80], k: [80,80], f: [80,110], e: [50,50], w: [60,40] },
-          end: { h: [60,25], s: [60,40], p: [60,80], k: [80,80], f: [80,110], e: [50,20], w: [60,10] },
-          duration: 2
-        };
-      case "squat":
-      case "generic_barbell":
-        return {
-          start: { h: [60,20], s: [60,35], p: [60,65], k: [65,85], f: [65,110], e: [70,45], w: [60,35] },
-          end: { h: [50,50], s: [50,65], p: [40,90], k: [75,90], f: [65,110], e: [60,75], w: [50,65] },
-          duration: 2.5
-        };
-      case "leg_press":
-        return {
-          start: { h: [30,80], s: [45,75], p: [80,95], k: [60,60], f: [85,40], e: [60,80], w: [75,90] },
-          end: { h: [30,80], s: [45,75], p: [80,95], k: [100,70], f: [115,50], e: [60,80], w: [75,90] },
-          duration: 2.5
-        };
-      case "hip_hinge":
-        return {
-          start: { h: [60,20], s: [60,35], p: [60,65], k: [65,85], f: [65,110], e: [60,50], w: [60,65] },
-          end: { h: [90,45], s: [85,55], p: [40,65], k: [55,85], f: [65,110], e: [85,75], w: [85,95] },
-          duration: 2.5
-        };
-      case "curl":
-      case "generic_dumbbell":
-        return {
-          start: { h: [60,20], s: [60,35], p: [60,70], k: [65,90], f: [65,110], e: [60,55], w: [60,75] },
-          end: { h: [60,20], s: [60,35], p: [60,70], k: [65,90], f: [65,110], e: [55,55], w: [75,40] },
-          duration: 2
-        };
-      case "tricep_extension":
-        return {
-          start: { h: [60,20], s: [60,35], p: [60,70], k: [65,90], f: [65,110], e: [55,20], w: [40,30] },
-          end: { h: [60,20], s: [60,35], p: [60,70], k: [65,90], f: [65,110], e: [55,20], w: [55,5] },
-          duration: 2
-        };
-      case "lateral_raise":
-        return {
-          start: { h: [60,20], s: [60,35], p: [60,70], k: [65,90], f: [65,110], e: [60,55], w: [60,75] },
-          end: { h: [60,20], s: [60,35], p: [60,70], k: [65,90], f: [65,110], e: [40,45], w: [20,45] },
-          duration: 2
-        };
-      case "running":
-      case "stair_climbing":
-        return {
-          start: { h: [60,20], s: [60,35], p: [60,65], k: [80,75], f: [80,105], e: [40,45], w: [50,30] },
-          end: { h: [60,22], s: [60,37], p: [60,67], k: [50,85], f: [40,95], e: [70,45], w: [60,60] },
-          duration: 0.8
-        };
-      case "cycling":
-        return {
-          start: { h: [50,30], s: [40,45], p: [75,70], k: [85,55], f: [65,85], e: [35,65], w: [20,70] },
-          end: { h: [50,32], s: [40,47], p: [75,72], k: [65,90], f: [80,105], e: [35,67], w: [20,72] },
-          duration: 1
-        };
-      case "core_hold":
-      default:
-        return {
-          start: { h: [20,80], s: [35,80], p: [75,80], k: [100,85], f: [110,95], e: [35,100], w: [50,100] },
-          end: { h: [20,82], s: [35,82], p: [75,82], k: [100,87], f: [110,97], e: [35,102], w: [50,102] },
-          duration: 2
-        };
-    }
-  };
-
-  const { start, end, duration } = getCoords();
+function YonoPerforming({
+  family,
+  exerciseId = "",
+  intensity = "medium",
+}: {
+  family: YonoAnimationFamily;
+  exerciseId?: string;
+  intensity?: YonoIntensity;
+}) {
+  const { start, end, duration, prop, eq } = getExerciseArchetype(exerciseId, family);
 
   // Helper to generate a single continuous path for 3 joints (e.g. Shoulder -> Elbow -> Wrist)
-  // This allows strokeLinejoin="round" to work perfectly!
-  const getPath = (j1: keyof JointCoords, j2: keyof JointCoords, j3: keyof JointCoords, coords: JointCoords, dx = 0, dy = 0) => {
+  const getPath = (j1: keyof typeof start, j2: keyof typeof start, j3: keyof typeof start, coords: typeof start, dx = 0, dy = 0) => {
     return `M ${coords[j1][0] + dx} ${coords[j1][1] + dy} L ${coords[j2][0] + dx} ${coords[j2][1] + dy} L ${coords[j3][0] + dx} ${coords[j3][1] + dy}`;
   };
 
   // Pause physics: start -> end -> pause -> start
   const transitionConfig = { duration, repeat: Infinity, times: [0, 0.4, 0.6, 1], ease: "easeInOut" as const };
 
-  const animPath = (j1: keyof JointCoords, j2: keyof JointCoords, j3: keyof JointCoords, dx = 0, dy = 0) => [
+  const animPath = (j1: keyof typeof start, j2: keyof typeof start, j3: keyof typeof start, dx = 0, dy = 0) => [
     getPath(j1, j2, j3, start, dx, dy),
     getPath(j1, j2, j3, end, dx, dy),
     getPath(j1, j2, j3, end, dx, dy),
     getPath(j1, j2, j3, start, dx, dy)
   ];
 
-  const animCoord = (joint: keyof JointCoords, axis: 0 | 1, offset = 0) => [
+  const animCoord = (joint: keyof typeof start, axis: 0 | 1, offset = 0) => [
     start[joint][axis] + offset, 
     end[joint][axis] + offset, 
     end[joint][axis] + offset, 
     start[joint][axis] + offset
   ];
 
-  // Equipment selection based on family
-  let eqVisual = <circle cx="0" cy="0" r="7" fill="#64748b" />;
-  if (["squat", "horizontal_push", "vertical_push", "hip_hinge", "generic_barbell", "vertical_pull", "rowing_cardio"].includes(family)) {
+  // Equipment selection
+  let eqVisual = null;
+  if (eq === "barbell") {
     eqVisual = (
       <g>
         <rect x="-35" y="-3" width="70" height="6" fill="#94a3b8" rx="3" />
@@ -390,7 +306,7 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
         <rect x="22" y="-15" width="8" height="30" rx="2" fill="#475569" />
       </g>
     );
-  } else if (["curl", "tricep_extension", "lateral_raise", "generic_dumbbell"].includes(family)) {
+  } else if (eq === "dumbbell") {
     eqVisual = (
       <g>
         <rect x="-10" y="-2" width="20" height="4" fill="#94a3b8" />
@@ -398,6 +314,25 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
         <rect x="6" y="-8" width="6" height="16" rx="2" fill="#475569" />
       </g>
     );
+  } else if (eq === "cable" || eq === "machine") {
+    eqVisual = <circle cx="0" cy="0" r="7" fill="#64748b" />;
+  }
+
+  // Environment Prop selection
+  let propVisual = null;
+  if (prop === "floor") {
+    propVisual = <line x1="0" y1="105" x2="120" y2="105" stroke="#334155" strokeWidth="4" strokeLinecap="round" />;
+  } else if (prop === "bench") {
+    propVisual = <rect x="30" y="80" width="80" height="10" fill="#334155" rx="3" />;
+  } else if (prop === "incline_bench") {
+    propVisual = (
+      <g>
+        <rect x="40" y="55" width="60" height="10" fill="#334155" rx="3" transform="rotate(-30 40 55)" />
+        <rect x="50" y="90" width="40" height="10" fill="#334155" rx="3" />
+      </g>
+    );
+  } else if (prop === "pullup_bar") {
+    propVisual = <rect x="20" y="10" width="80" height="4" fill="#334155" rx="2" />;
   }
 
   // Background offset for 3D depth
@@ -406,9 +341,11 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
 
   return (
     <g>
+      {/* Environment Props */}
+      {propVisual}
+
       {/* Background Dog Limbs (Darker Brown) */}
       <g strokeLinecap="round" strokeLinejoin="round">
-        {/* BG Leg (Hip -> Knee -> Foot) */}
         <motion.path
           animate={{ d: animPath("p", "k", "f", bgDx, bgDy) }}
           transition={transitionConfig}
@@ -416,15 +353,12 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
           strokeWidth="12"
           fill="none"
         />
-        {/* BG Foot Paw */}
         <motion.circle
           animate={{ cx: animCoord("f", 0, bgDx), cy: animCoord("f", 1, bgDy) }}
           transition={transitionConfig}
           r="6"
           fill="#D4A57A"
         />
-        
-        {/* BG Arm (Shoulder -> Elbow -> Wrist) */}
         <motion.path
           animate={{ d: animPath("s", "e", "w", bgDx, bgDy) }}
           transition={transitionConfig}
@@ -432,7 +366,6 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
           strokeWidth="10"
           fill="none"
         />
-        {/* BG Hand Paw */}
         <motion.circle
           animate={{ cx: animCoord("w", 0, bgDx), cy: animCoord("w", 1, bgDy) }}
           transition={transitionConfig}
@@ -451,7 +384,6 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
 
       {/* Foreground Dog Body */}
       <g strokeLinecap="round" strokeLinejoin="round">
-        {/* Fat Oval Torso */}
         <motion.line
           animate={{ 
             x1: animCoord("s", 0), y1: animCoord("s", 1), 
@@ -462,7 +394,16 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
           strokeWidth="34"
         />
         
-        {/* FG Leg (Hip -> Knee -> Foot) */}
+        <motion.g
+          animate={{ 
+            x: animCoord("p", 0), y: animCoord("p", 1),
+            rotate: [-10, 20, 20, -10] 
+          }}
+          transition={transitionConfig}
+        >
+          <path d="M 0 0 Q 15 -10 20 -25" stroke="#C4905A" strokeWidth="7" fill="none" strokeLinecap="round" />
+        </motion.g>
+
         <motion.path
           animate={{ d: animPath("p", "k", "f") }}
           transition={transitionConfig}
@@ -470,7 +411,6 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
           strokeWidth="12"
           fill="none"
         />
-        {/* FG Foot Paw */}
         <motion.circle
           animate={{ cx: animCoord("f", 0), cy: animCoord("f", 1) }}
           transition={transitionConfig}
@@ -478,7 +418,6 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
           fill="#E8C49A"
         />
         
-        {/* FG Arm (Shoulder -> Elbow -> Wrist) */}
         <motion.path
           animate={{ d: animPath("s", "e", "w") }}
           transition={transitionConfig}
@@ -486,7 +425,6 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
           strokeWidth="10"
           fill="none"
         />
-        {/* FG Hand Paw */}
         <motion.circle
           animate={{ cx: animCoord("w", 0), cy: animCoord("w", 1) }}
           transition={transitionConfig}
@@ -495,12 +433,23 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
         />
       </g>
 
-      {/* Head */}
+      {/* Head with Dynamic Expression */}
       <motion.g
         animate={{ x: animCoord("h", 0), y: animCoord("h", 1) }}
         transition={transitionConfig}
       >
-        <YonoHead expression="focused" earAngle={-5} />
+        <motion.g animate={{ opacity: [1, 0, 0, 1] }} transition={transitionConfig}>
+          <YonoHead expression="focused" earAngle={-5} />
+        </motion.g>
+        
+        <motion.g animate={{ opacity: [0, 1, 1, 0] }} transition={transitionConfig}>
+          <YonoHead expression="tired" earAngle={-20} />
+          
+          <motion.g animate={{ y: [0, -10, -10, 0], opacity: [0, 1, 1, 0] }} transition={transitionConfig}>
+            <circle cx="-15" cy="-20" r="2" fill="#ADE3FF" />
+            <circle cx="15" cy="-25" r="2.5" fill="#ADE3FF" />
+          </motion.g>
+        </motion.g>
       </motion.g>
     </g>
   );
@@ -639,7 +588,11 @@ export function YonoAnimation({
     idle: <YonoIdle />,
     greeting: <YonoGreeting />,
     thinking: <YonoThinking />,
-    performing: <YonoPerforming family={animationFamily} />,
+    performing: <YonoPerforming 
+          family={animationFamily} 
+          exerciseId={exerciseId}
+          intensity={intensity} 
+        />,
     set_complete: <YonoSetComplete />,
     resting: <YonoResting />,
     tired: <YonoTired />,
