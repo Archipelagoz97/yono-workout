@@ -13,6 +13,7 @@ import {
   TimerIcon,
   XIcon,
   FlagIcon,
+  InfoIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -32,6 +33,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { exercises as exerciseCatalog } from "@/data/exercises.compact";
 import { saveActiveWorkoutState, getActiveWorkoutState, clearActiveWorkoutState } from "@/lib/storage";
 import { getProgressionAdvice, estimateOneRepMax } from "@/lib/progression";
+import { ExerciseDetailsDialog } from "@/components/workout/ExerciseDetailsDialog";
 
 const exerciseMap = new Map(exerciseCatalog.map((e) => [e.id, e]));
 
@@ -54,7 +56,9 @@ export default function WorkoutPage() {
   const [savedCopy, setSavedCopy] = useState<string | null>(null);
   const [yonoState, setYonoState] = useState<YonoState>("idle");
   const [showFinishDialog, setShowFinishDialog] = useState(false);
+  const [showCompleteDialog, setShowCompleteDialog] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
+  const [detailsExId, setDetailsExId] = useState<string | null>(null);
 
   // Rest timer
   const [restActive, setRestActive] = useState(false);
@@ -263,7 +267,8 @@ export default function WorkoutPage() {
         updatedAt: now,
       });
       clearActiveWorkoutState();
-      router.push("/history");
+      setShowFinishDialog(false);
+      setShowCompleteDialog(true);
     } finally {
       setIsFinishing(false);
     }
@@ -354,9 +359,17 @@ export default function WorkoutPage() {
         <Card className="p-5 mb-4 shadow-sm">
           {/* Exercise name */}
           <div className="mb-4">
-            <h2 className="text-xl font-display font-bold text-foreground">
-              {exerciseDef?.name ?? currentSessionExercise?.exerciseId}
-            </h2>
+            <div 
+              className="flex items-center gap-1.5 cursor-pointer hover:text-primary transition-colors group mb-1"
+              onClick={() => {
+                if (currentSessionExercise) setDetailsExId(currentSessionExercise.exerciseId);
+              }}
+            >
+              <h2 className="text-xl font-display font-bold text-foreground group-hover:underline">
+                {exerciseDef?.name ?? currentSessionExercise?.exerciseId}
+              </h2>
+              <InfoIcon className="w-5 h-5 text-muted-foreground group-hover:text-primary" />
+            </div>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <Badge variant="outline" className="text-xs">
                 Set {setNumber} of {currentSessionExercise?.targetSets ?? 3}
@@ -615,6 +628,40 @@ export default function WorkoutPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Workout complete overlay */}
+      <Dialog open={showCompleteDialog} onOpenChange={setShowCompleteDialog}>
+        <DialogContent className="max-w-sm p-6 text-center">
+          <DialogHeader className="mb-4">
+            <DialogTitle className="text-2xl font-display">Workout Complete! 🎉</DialogTitle>
+          </DialogHeader>
+          <div className="flex justify-center mb-6">
+            <div className="w-40 h-40">
+              <YonoAnimation state="workout_complete" animationFamily="core_hold" />
+            </div>
+          </div>
+          <DialogDescription className="text-base mb-8">
+            Great job! Your workout has been saved to your history.
+          </DialogDescription>
+          <Button onClick={() => router.push("/today")} className="w-full h-12 text-lg rounded-xl">
+            Back to Dashboard
+          </Button>
+        </DialogContent>
+      </Dialog>
+
+      {/* Exercise details & replacement dialog */}
+      <ExerciseDetailsDialog
+        exerciseId={detailsExId}
+        onOpenChange={(open) => !open && setDetailsExId(null)}
+        onReplace={async (newId) => {
+          if (currentSessionExercise) {
+            await db.sessionExercises.update(currentSessionExercise.id!, {
+              exerciseId: newId
+            });
+            setDetailsExId(null);
+          }
+        }}
+      />
     </div>
   );
 }

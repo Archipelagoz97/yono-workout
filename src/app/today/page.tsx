@@ -3,11 +3,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ZapIcon, ClockIcon, FlameIcon, WrenchIcon, RefreshCwIcon, PlayIcon, AlertCircleIcon } from "lucide-react";
+import { ZapIcon, ClockIcon, FlameIcon, WrenchIcon, RefreshCwIcon, PlayIcon, AlertCircleIcon, Settings2Icon, InfoIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { YonoAnimation } from "@/components/yono/YonoAnimation";
+import { ExerciseDetailsDialog } from "@/components/workout/ExerciseDetailsDialog";
 import { getCopy } from "@/data/yono-copy";
 import db from "@/db/database";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -561,6 +562,17 @@ export default function TodayPage() {
             }}
             onStart={handleStartWorkout}
             onRegenerate={handleGenerate}
+            onReplaceExercise={(oldId, newId) => {
+              setSuggestion((prev: any) => {
+                if (!prev) return prev;
+                return {
+                  ...prev,
+                  exercises: prev.exercises.map((e: any) => 
+                    e.exerciseId === oldId ? { ...e, exerciseId: newId } : e
+                  )
+                };
+              });
+            }}
           />
         ) : null}
       </AnimatePresence>
@@ -584,6 +596,7 @@ function WorkoutSuggestionCard({
   suggestion,
   onStart,
   onRegenerate,
+  onReplaceExercise,
 }: {
   suggestion: {
     sessionName: string;
@@ -602,7 +615,10 @@ function WorkoutSuggestionCard({
   };
   onStart: () => void;
   onRegenerate: () => void;
+  onReplaceExercise: (oldId: string, newId: string) => void;
 }) {
+  const [detailsExId, setDetailsExId] = useState<string | null>(null);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 30 }}
@@ -645,9 +661,15 @@ function WorkoutSuggestionCard({
                   {idx + 1}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-foreground text-sm truncate">
-                    {exerciseDef?.name ?? ex.exerciseId}
-                  </p>
+                  <div 
+                    className="flex items-center gap-1.5 cursor-pointer hover:text-primary transition-colors group"
+                    onClick={() => setDetailsExId(ex.exerciseId)}
+                  >
+                    <p className="font-medium text-foreground text-sm truncate group-hover:underline">
+                      {exerciseDef?.name ?? ex.exerciseId}
+                    </p>
+                    <InfoIcon className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary" />
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {ex.targetSets} sets
                     {ex.targetRepMin && ex.targetRepMax
@@ -684,6 +706,15 @@ function WorkoutSuggestionCard({
           </Button>
         </div>
       </Card>
+
+      <ExerciseDetailsDialog
+        exerciseId={detailsExId}
+        onOpenChange={(open) => !open && setDetailsExId(null)}
+        onReplace={(newId) => {
+          if (detailsExId) onReplaceExercise(detailsExId, newId);
+          setDetailsExId(null);
+        }}
+      />
     </motion.div>
   );
 }
