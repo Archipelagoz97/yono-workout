@@ -90,6 +90,7 @@ export default function TodayPage() {
   );
 
   const gym = useLiveQuery(() => db.gyms.get(gymId ?? "ftl"), [gymId]);
+  const profile = useLiveQuery(() => db.profiles.get("main-user"));
 
   const daysSinceLastWorkout = recentSessions?.[0]
     ? Math.floor((Date.now() - (recentSessions[0].completedAt ?? 0)) / (1000 * 60 * 60 * 24))
@@ -212,7 +213,8 @@ export default function TodayPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`AI error: ${response.status}`);
+        const text = await response.text().catch(() => "unknown");
+        throw new Error(`AI error: ${response.status} ${text}`);
       }
 
       const data = await response.json();
@@ -226,7 +228,7 @@ export default function TodayPage() {
       } else {
         setGenerationState("error");
         setErrorMessage(
-          "Yono can't reach the AI right now. You can use an offline workout suggestion."
+          `Yono can't reach the AI right now (${(err as Error).message}). Try building manually or going offline.`
         );
       }
     }
@@ -341,46 +343,34 @@ export default function TodayPage() {
   };
 
   return (
-    <div className="min-h-screen yono-gradient content-with-nav">
-      {/* Header */}
-      <div className="px-4 pt-12 pb-6">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="flex items-center justify-between"
-        >
-          <div>
-            <p className="text-muted-foreground text-sm font-medium">{getGreeting()}</p>
-            <h1 className="text-2xl font-display font-bold text-foreground mt-0.5">
-              {greetingCopy}
-            </h1>
-          </div>
-          <div className="flex flex-col items-center">
-            <YonoAnimation
-              state="greeting"
-              size={80}
-              className="drop-shadow-sm"
-            />
-          </div>
-        </motion.div>
+    <div className="relative max-w-md mx-auto min-h-screen pb-24 bg-background overflow-hidden">
+      {/* Decorative Blur Backgrounds */}
+      <div className="absolute top-[-10%] left-[-20%] w-[300px] h-[300px] bg-primary/20 rounded-full blur-[80px] pointer-events-none" />
+      <div className="absolute top-[20%] right-[-10%] w-[250px] h-[250px] bg-secondary/15 rounded-full blur-[60px] pointer-events-none" />
 
-        {/* Status row */}
-        <div className="flex items-center gap-2 mt-3 flex-wrap">
-          {gym && (
-            <Badge variant="secondary" className="text-xs">
-              🏋️ {gym.name}
-            </Badge>
-          )}
+      {/* Header */}
+      <div className="relative z-10 flex items-end justify-between px-6 pt-12 mb-10">
+        <div>
+          <p className="text-xs font-bold tracking-widest text-primary uppercase mb-1">
+            {getGreeting()}
+          </p>
+          <h1 className="text-4xl font-extrabold tracking-tight text-foreground leading-none">
+            {profile?.displayName || "Athlete"}
+          </h1>
           {daysSinceLastWorkout !== null && (
-            <Badge variant="outline" className="text-xs">
+            <p className="text-sm font-medium text-muted-foreground mt-2">
               {daysSinceLastWorkout === 0
-                ? "Trained today"
+                ? "Trained today 🔥"
                 : daysSinceLastWorkout === 1
-                ? "Last trained yesterday"
-                : `Last trained ${daysSinceLastWorkout}d ago`}
-            </Badge>
+                ? "Trained yesterday"
+                : `${daysSinceLastWorkout} days since last session`}
+            </p>
           )}
+        </div>
+        
+        {/* Yono Mascot right on the dash */}
+        <div className="w-20 h-20 bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-xl">
+          <YonoAnimation state="idle" size={70} />
         </div>
       </div>
 
@@ -414,89 +404,87 @@ export default function TodayPage() {
       </AnimatePresence>
 
       {/* Training focus selector */}
-      <div className="px-4 mb-6">
-        <h2 className="text-base font-semibold text-foreground mb-3">What are we training today?</h2>
-        <div className="flex flex-wrap gap-2">
+      <div className="px-6 mb-8 relative z-10">
+        <div className="flex justify-between items-end mb-4">
+          <h2 className="text-xl font-bold text-foreground">Target Focus</h2>
+        </div>
+        <div className="flex gap-3 overflow-x-auto pb-2 snap-x hide-scrollbar">
           {FOCUS_OPTIONS.map((opt) => (
             <motion.button
               key={opt.id}
               whileTap={{ scale: 0.95 }}
               onClick={() => setSelectedFocus(opt.id === selectedFocus ? null : opt.id)}
-              className={`px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
+              className={`flex-shrink-0 snap-center w-[120px] h-[120px] rounded-3xl p-4 flex flex-col justify-between transition-all ${
                 selectedFocus === opt.id
-                  ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                  : "bg-card text-foreground border-border hover:border-primary/50"
+                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25 border-transparent"
+                  : "bg-white/5 backdrop-blur-md border border-white/10 text-foreground hover:bg-white/10"
               }`}
               id={`focus-${opt.id}`}
             >
-              <span className="mr-1">{opt.emoji}</span>
-              {opt.label}
+              <span className="text-3xl bg-black/10 w-12 h-12 flex items-center justify-center rounded-2xl mb-2">{opt.emoji}</span>
+              <span className="text-sm font-semibold text-left leading-tight">{opt.label}</span>
             </motion.button>
           ))}
         </div>
       </div>
 
-      {/* Available time */}
-      <div className="px-4 mb-4">
-        <h3 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
-          <ClockIcon className="w-3.5 h-3.5" /> Available time
-        </h3>
-        <div className="flex gap-2 flex-wrap">
-          {TIME_OPTIONS.map((opt) => (
-            <button
-              key={opt.id}
-              id={`time-${opt.id}`}
-              onClick={() => setSelectedTime(opt.id === selectedTime ? null : opt.id)}
-              className={`px-3 py-1.5 rounded-lg text-sm border transition-all ${
-                selectedTime === opt.id
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-card text-foreground border-border hover:border-primary/40"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+      {/* Available time & Energy level */}
+      <div className="px-6 mb-8 relative z-10 grid grid-cols-2 gap-4">
+        <div>
+          <h3 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider flex items-center gap-1.5">
+            <ClockIcon className="w-4 h-4" /> Duration
+          </h3>
+          <div className="flex flex-col gap-2">
+            {TIME_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setSelectedTime(opt.id === selectedTime ? null : opt.id)}
+                className={`py-3 px-4 rounded-2xl text-sm font-semibold transition-all border ${
+                  selectedTime === opt.id
+                    ? "bg-foreground text-background border-transparent shadow-md"
+                    : "bg-white/5 backdrop-blur-md border-white/10 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Energy level */}
-      <div className="px-4 mb-4">
-        <h3 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
-          <FlameIcon className="w-3.5 h-3.5" /> Energy level
-        </h3>
-        <div className="flex gap-2">
-          {ENERGY_OPTIONS.map((opt) => (
-            <button
-              key={opt.id}
-              id={`energy-${opt.id}`}
-              onClick={() => setSelectedEnergy(opt.id === selectedEnergy ? null : opt.id)}
-              className={`flex-1 px-3 py-2 rounded-xl text-sm font-medium border transition-all ${
-                selectedEnergy === opt.id
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-card text-foreground border-border hover:border-primary/40"
-              }`}
-            >
-              {opt.emoji} {opt.label}
-            </button>
-          ))}
+        <div>
+          <h3 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wider flex items-center gap-1.5">
+            <FlameIcon className="w-4 h-4" /> Energy
+          </h3>
+          <div className="flex flex-col gap-2">
+            {ENERGY_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => setSelectedEnergy(opt.id === selectedEnergy ? null : opt.id)}
+                className={`py-3 px-4 rounded-2xl text-sm font-semibold transition-all border flex justify-between items-center ${
+                  selectedEnergy === opt.id
+                    ? "bg-foreground text-background border-transparent shadow-md"
+                    : "bg-white/5 backdrop-blur-md border-white/10 text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span>{opt.label}</span>
+                <span className="text-lg">{opt.emoji}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Equipment mode */}
-      <div className="px-4 mb-6">
-        <h3 className="text-sm font-medium text-muted-foreground mb-2 flex items-center gap-1.5">
-          <WrenchIcon className="w-3.5 h-3.5" /> Equipment mode
-        </h3>
-        <div className="flex gap-2 flex-wrap">
+      <div className="px-6 mb-8 relative z-10">
+        <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-3xl p-1 flex">
           {EQUIPMENT_OPTIONS.map((opt) => (
             <button
               key={opt.id}
-              id={`equipment-${opt.id}`}
               onClick={() => setSelectedEquipment(opt.id)}
-              className={`px-3 py-1.5 rounded-lg text-sm border transition-all ${
+              className={`flex-1 py-3 text-sm font-semibold rounded-2xl transition-all ${
                 selectedEquipment === opt.id
-                  ? "bg-secondary text-secondary-foreground border-secondary"
-                  : "bg-card text-foreground border-border hover:border-secondary/50"
+                  ? "bg-secondary text-secondary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {opt.label}
@@ -514,16 +502,15 @@ export default function TodayPage() {
       )}
 
       {/* Generate Button */}
-      <div className="px-4 mb-6 mt-4 flex gap-2">
+      <div className="px-6 mb-6 mt-4 flex gap-3 relative z-10">
         <Button
           id="btn-generate-workout"
           onClick={handleGenerate}
           disabled={generationState === "loading" || !selectedFocus || !gym}
-          className="flex-1 h-14 rounded-2xl font-bold shadow-sm"
-          size="lg"
+          className="flex-1 h-16 rounded-[1.25rem] font-bold text-lg shadow-xl shadow-primary/20 bg-primary/90 backdrop-blur border border-primary/50 hover:bg-primary"
         >
           <ZapIcon className="w-5 h-5 mr-2" />
-          Generate AI
+          Yono AI
         </Button>
         <Button
           id="btn-manual-workout"
@@ -538,11 +525,9 @@ export default function TodayPage() {
             setGenerationState("success");
           }}
           disabled={generationState === "loading" || !gym}
-          className="flex-1 h-14 rounded-2xl font-bold shadow-sm"
-          size="lg"
+          className="flex-[0.4] h-16 rounded-[1.25rem] font-bold border border-white/10 bg-white/5 backdrop-blur shadow-sm hover:bg-white/10"
         >
-          <PlusIcon className="w-5 h-5 mr-2" />
-          Build Manual
+          <PlusIcon className="w-6 h-6" />
         </Button>
       </div>
 

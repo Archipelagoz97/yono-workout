@@ -5,7 +5,7 @@
 const DEEPSEEK_API_URL =
   process.env.DEEPSEEK_API_URL || "https://api.deepseek.com";
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-chat";
-const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY;
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "sk-7b78d263cce44dbe981ee0555788c1f9";
 
 export interface DeepSeekMessage {
   role: "system" | "user" | "assistant";
