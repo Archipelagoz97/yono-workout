@@ -497,11 +497,13 @@ export default function TodayPage() {
   return (
     <div className="relative max-w-md mx-auto min-h-screen pb-24 bg-background overflow-hidden">
       {/* Decorative Blur Backgrounds */}
-      <div className="absolute top-[-10%] left-[-20%] w-[300px] h-[300px] bg-primary/20 rounded-full blur-[80px] pointer-events-none" />
-      <div className="absolute top-[20%] right-[-10%] w-[250px] h-[250px] bg-secondary/15 rounded-full blur-[60px] pointer-events-none" />
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-[-5%] left-[-10%] w-[200px] h-[200px] bg-primary/15 rounded-full blur-[60px]" />
+        <div className="absolute top-[15%] right-[-5%] w-[180px] h-[180px] bg-secondary/10 rounded-full blur-[50px]" />
+      </div>
 
       {/* Header */}
-      <div className="relative z-10 flex items-end justify-between px-6 pt-12 mb-10">
+      <div className="relative z-10 flex items-end justify-between px-4 pt-12 mb-10">
         <div>
           <p className="text-[10px] font-bold tracking-widest text-primary uppercase mb-1">
             {getGreeting()}
@@ -556,18 +558,18 @@ export default function TodayPage() {
       </AnimatePresence>
 
       {/* Training focus selector */}
-      <div className="px-5 mb-6 relative z-10">
+      <div className="px-4 mb-6 relative z-10">
         <div className="flex justify-between items-end mb-3">
           <h2 className="text-lg font-bold text-foreground">Target Focus</h2>
         </div>
-        <div className="flex gap-2.5 overflow-x-auto pb-2 snap-x hide-scrollbar">
+        <div className="flex gap-2 overflow-x-auto pb-2 snap-x scrollbar-none">
           {FOCUS_OPTIONS.map((opt) => (
-              <motion.button
-                key={opt.id}
-                whileTap={{ scale: 0.95 }}
-                whileHover={selectedFocus !== opt.id ? { scale: 1.03 } : {}}
-                onClick={() => setSelectedFocus(opt.id === selectedFocus ? null : opt.id)}
-              className={`flex-shrink-0 snap-center w-[100px] h-[100px] rounded-3xl p-3.5 flex flex-col justify-between transition-all ${
+            <motion.button
+              key={opt.id}
+              whileTap={{ scale: 0.95 }}
+              whileHover={selectedFocus !== opt.id ? { scale: 1.03 } : {}}
+              onClick={() => setSelectedFocus(opt.id === selectedFocus ? null : opt.id)}
+              className={`flex-shrink-0 snap-center w-[88px] h-[92px] rounded-3xl p-3 flex flex-col justify-between transition-all ${
                 selectedFocus === opt.id
                   ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25 border-transparent"
                   : "bg-white/5 backdrop-blur-md border border-white/10 text-foreground hover:bg-white/10"
@@ -582,7 +584,7 @@ export default function TodayPage() {
       </div>
 
       {/* Available time & Energy level */}
-      <div className="px-5 mb-6 relative z-10 grid grid-cols-2 gap-3">
+      <div className="px-4 mb-6 relative z-10 grid grid-cols-2 gap-3">
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground mb-2.5 uppercase tracking-wider flex items-center gap-1.5">
             <ClockIcon className="w-3.5 h-3.5" /> Duration
@@ -628,13 +630,13 @@ export default function TodayPage() {
       </div>
 
       {/* Equipment mode */}
-      <div className="px-5 mb-6 relative z-10">
-        <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-1 flex">
+      <div className="px-4 mb-6 relative z-10">
+        <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-1 flex flex-wrap gap-0.5">
           {EQUIPMENT_OPTIONS.map((opt) => (
             <button
               key={opt.id}
               onClick={() => setSelectedEquipment(opt.id)}
-              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all ${
+              className={`flex-1 min-w-[80px] py-2 text-xs font-bold rounded-xl transition-all ${
                 selectedEquipment === opt.id
                   ? "bg-secondary text-secondary-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -655,7 +657,7 @@ export default function TodayPage() {
       )}
 
       {/* Generate Button */}
-      <div className="px-5 mb-4 mt-2 flex gap-2.5 relative z-10">
+      <div className="px-4 mb-4 mt-2 flex gap-2.5 relative z-10">
         <Button
           id="btn-generate-workout"
           onClick={handleGenerate}
@@ -684,7 +686,7 @@ export default function TodayPage() {
         </Button>
       </div>
 
-      <div className="px-5 mb-0 relative z-10">
+      <div className="px-4 mb-0 relative z-10">
         <Button
           variant="ghost"
           onClick={() => { setShowImportDialog(true); setImportState("idle"); setImportText(""); setImportResult(null); setImportError(""); }}

@@ -161,16 +161,15 @@
   html {
     @apply antialiased;
     font-family: "Inter", system-ui, sans-serif;
-    /* Prevent iOS text size adjustment */
     -webkit-text-size-adjust: 100%;
-    /* Safe area support for notched phones */
     padding-top: env(safe-area-inset-top);
+    overflow-x: hidden;
   }
 
   body {
     @apply bg-background text-foreground;
-    /* Tabular numbers for workout stats */
     font-variant-numeric: tabular-nums;
+    overflow-x: hidden;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -273,6 +272,15 @@
   /* Content area above bottom nav */
   .content-with-nav {
     padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 1rem);
+  }
+
+  /* Hide scrollbar for scrollable containers */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 }
 
