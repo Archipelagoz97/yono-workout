@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -165,6 +165,33 @@ export default function WorkoutPage() {
 
   const totalVolumeKg =
     allSessionSets?.reduce((sum, s) => sum + (s.weightKg ?? 0) * (s.reps ?? 0), 0) ?? 0;
+
+  // Summary of all logged work for the completion popup, grouped by exercise.
+  const exerciseSummary = useMemo(() => {
+    if (!sessionExercises || !allSessionSets) return [];
+    return sessionExercises
+      .map((se) => {
+        const def = exerciseMap.get(se.exerciseId);
+        const sets = allSessionSets.filter(
+          (s) => s.sessionExerciseId === se.id && s.setType !== "warmup"
+        );
+        if (sets.length === 0) return null;
+        const workingWeight = sets.filter((s) => s.weightKg != null).map((s) => s.weightKg as number);
+        const reps = sets.filter((s) => s.reps != null).map((s) => s.reps as number);
+        const duration = sets.filter((s) => s.durationSeconds != null).map((s) => s.durationSeconds as number);
+        return {
+          name: def?.name ?? se.exerciseId,
+          setCount: sets.length,
+          totalReps: reps.reduce((a, b) => a + b, 0),
+          avgWeightKg: workingWeight.length > 0
+            ? workingWeight.reduce((a, b) => a + b, 0) / workingWeight.length
+            : undefined,
+          totalDurationSeconds: duration.reduce((a, b) => a + b, 0),
+          durationBased: duration.length > 0 && workingWeight.length === 0,
+        };
+      })
+      .filter((e): e is NonNullable<typeof e> => e !== null);
+  }, [sessionExercises, allSessionSets]);
 
   const measurementType = exerciseDef?.measurementType;
   const weightUnit = profile?.preferredWeightUnit ?? "kg";
@@ -445,10 +472,23 @@ export default function WorkoutPage() {
         setLastSavedSet(null);
       }, 6000);
 
-      const copy = getRandomCopy("set_complete");
-      setSavedCopy(copy ?? null);
+      // Build feedback message with the actual set details.
+      const setLabel = setType === "warmup" ? `Warmup ${setNumber}` : `Set ${setNumber}`;
+      let detail: string;
+      if (hasWeightInput && weight > 0) {
+        detail = `${formatWeight(setRecord.weightKg ?? setRecord.assistanceWeightKg ?? 0, weightUnit)} × ${setRecord.reps ?? "—"} reps`;
+      } else if (hasDurationInput && durationSeconds > 0) {
+        detail = `${Math.floor(durationSeconds / 60)}:${(durationSeconds % 60).toString().padStart(2, "0")}`;
+      } else if (hasDistanceInput && distanceMeters > 0) {
+        detail = `${distanceMeters} m`;
+      } else if (setRecord.reps) {
+        detail = `${setRecord.reps} reps`;
+      } else {
+        detail = "saved";
+      }
+      const flavor = getRandomCopy("set_complete", true);
+      setSavedCopy(`${setLabel} ditambah · ${detail} · ${flavor ?? "Yono approves."}`);
       setYonoState("set_complete");
-
       // Advance set number / exercise
       const isWarmupSet = setType === "warmup";
       const workingAfterThis = workingSetsDone + 1;
@@ -584,6 +624,22 @@ export default function WorkoutPage() {
       setIsFinishing(false);
     }
   };
+
+  const toggleWeightUnit = useCallback(async (unit: "kg" | "lb") => {
+    if (unit === weightUnit || !profile) return;
+    try {
+      // Convert the currently entered weight to the new unit before switching.
+      setWeight((w) => Math.round(kgToDisplay(displayToKg(w, weightUnit), unit) * 100) / 100);
+      const now = Date.now();
+      await db.profiles.update("main-user", {
+        preferredWeightUnit: unit,
+        updatedAt: now,
+      });
+      setSavedCopy(`Unit ganti ke ${unit.toUpperCase()}. Beban tetap sama.`);
+    } catch {
+      setSavedCopy("Unit gagal diganti. Coba lagi.");
+    }
+  }, [weightUnit, profile]);
 
   // Touch swipe navigation
   const onTouchStart = (e: React.TouchEvent) => {
@@ -875,7 +931,25 @@ export default function WorkoutPage() {
           {/* Weight control */}
           {hasWeightInput && (
             <div className="mb-4">
-              <label className="text-sm font-medium text-foreground block mb-2">{weightLabel}</label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-medium text-foreground block">{weightLabel}</label>
+                <div className="flex items-center gap-0.5 p-0.5 bg-muted/60 rounded-lg">
+                  {(["kg", "lb"] as const).map((u) => (
+                    <button
+                      key={u}
+                      id={`btn-unit-${u}`}
+                      onClick={() => toggleWeightUnit(u)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
+                        weightUnit === u
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {u.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="flex items-center gap-4 justify-center">
                 <button
                   id="btn-weight-decrease"
@@ -1241,6 +1315,39 @@ export default function WorkoutPage() {
               </p>
             )}
           </div>
+
+          {/* Exercise summary */}
+          {exerciseSummary.length > 0 && (
+            <div className="mb-6 text-left">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2.5">
+                Kamu ngangkat
+              </p>
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1 scrollbar-none">
+                {exerciseSummary.map((e) => {
+                  let detail = `${e.setCount} set × ${e.totalReps} reps`;
+                  if (e.durationBased && e.totalDurationSeconds > 0) {
+                    const mins = Math.floor(e.totalDurationSeconds / 60);
+                    const secs = e.totalDurationSeconds % 60;
+                    detail = `${e.setCount} set × ${mins}:${secs.toString().padStart(2, "0")}`;
+                  } else if (e.avgWeightKg) {
+                    detail = `${e.setCount} set × ${e.totalReps} reps × ${formatWeight(e.avgWeightKg, weightUnit)}`;
+                  }
+                  return (
+                    <div
+                      key={e.name}
+                      className="flex items-center justify-between gap-3 p-2.5 bg-muted/50 rounded-xl"
+                    >
+                      <span className="text-sm font-medium text-foreground truncate">{e.name}</span>
+                      <span className="text-sm font-semibold text-primary whitespace-nowrap font-mono">
+                        {detail}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <Button onClick={() => router.push("/today")} className="w-full h-12 text-lg rounded-xl">
             Back to Dashboard
           </Button>
