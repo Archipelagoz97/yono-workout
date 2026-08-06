@@ -80,8 +80,8 @@ export default function RootLayout({
               </aside>
 
               {/* Main content */}
-              <main className="flex-1 lg:ml-64">
-                <div className="min-h-dvh max-w-2xl mx-auto lg:max-w-3xl">
+              <main className="w-full min-w-0 max-w-full overflow-x-clip flex-1 lg:ml-64">
+                <div className="w-full min-w-0 min-h-dvh max-w-2xl mx-auto lg:max-w-3xl">
                   {children}
                 </div>
               </main>

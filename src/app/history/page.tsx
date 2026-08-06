@@ -71,15 +71,18 @@ function WorkoutHeatmap({ sessions }: { sessions: WorkoutSession[] }) {
   const today = new Date();
   const thisMonth = today.toLocaleDateString("en", { month: "short" });
 
+  // Newest weeks first so they align to the right and are visible on load.
+  const reversedWeeks = [...weeks].reverse();
+
   return (
     <Card className="p-4 mb-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-foreground">Activity</h2>
         <span className="text-xs text-muted-foreground">Last 12 months</span>
       </div>
-      <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
-        <div className="flex gap-[3px] w-max">
-          {weeks.map((week, wi) => (
+      <div className="w-full min-w-0 overflow-x-auto overscroll-x-contain scrollbar-none -mx-1 px-1 pb-1">
+        <div className="flex flex-row-reverse gap-[3px] w-max min-w-full">
+          {reversedWeeks.map((week, wi) => (
             <div key={wi} className="flex flex-col gap-[3px]">
               {week.map((cell, di) =>
                 cell ? (
@@ -410,7 +413,7 @@ export default function HistoryPage() {
           All your workout records, stored locally.
         </p>
 
-        <div className="relative">
+        <div className="relative w-full min-w-0 max-w-full">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             id="history-search"
