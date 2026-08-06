@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ZapIcon, ClockIcon, FlameIcon, WrenchIcon, RefreshCwIcon, PlayIcon, AlertCircleIcon, Settings2Icon, InfoIcon, PlusIcon, XIcon, TrashIcon } from "lucide-react";
+import { ZapIcon, ClockIcon, FlameIcon, WrenchIcon, RefreshCwIcon, PlayIcon, AlertCircleIcon, Settings2Icon, InfoIcon, PlusIcon, XIcon, TrashIcon, FileTextIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +18,7 @@ import { getSelectedGymId, setSelectedGymId } from "@/lib/storage";
 import { exercises } from "@/data/exercises.compact";
 import { getFallbackExercises } from "@/lib/progression";
 import type { WorkoutSession } from "@/types";
+import type { BulkImportLogResult } from "@/lib/ai/schemas";
 
 const FOCUS_OPTIONS = [
   { id: "choose", label: "Choose for me", emoji: "🎲" },
@@ -127,6 +128,12 @@ export default function TodayPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [greetingCopy] = useState(() => getCopy("greeting"));
   const [gymId] = useState(() => getSelectedGymId());
+
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importText, setImportText] = useState("");
+  const [importState, setImportState] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [importResult, setImportResult] = useState<BulkImportLogResult | null>(null);
+  const [importError, setImportError] = useState("");
 
   // Live queries from IndexedDB
   const activeSession = useLiveQuery(
@@ -398,6 +405,95 @@ export default function TodayPage() {
     router.push(`/workout/${sessionId}`);
   };
 
+  const handleImportLog = async () => {
+    if (!importText.trim()) return;
+    setImportState("loading");
+    setImportError("");
+    setImportResult(null);
+
+    try {
+      const response = await fetch("/api/ai/bulk-import-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: importText.trim() }),
+        signal: AbortSignal.timeout(30000),
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: "unknown" }));
+        throw new Error(err.error || `Server error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setImportResult(data);
+      setImportState("success");
+    } catch (err) {
+      setImportState("error");
+      setImportError((err as Error).message || "Failed to parse log");
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!importResult || !gymId) return;
+    const now = Date.now();
+    const sessionId = crypto.randomUUID();
+
+    await db.transaction(
+      "rw",
+      [db.workoutSessions, db.sessionExercises, db.workoutSets],
+      async () => {
+        await db.workoutSessions.add({
+          id: sessionId,
+          name: importResult.sessionName,
+          gymId,
+          status: "completed",
+          source: "manual",
+          focus: [],
+          estimatedMinutes: importResult.exercises.reduce((t, e) => t + e.sets.length * 3, 0),
+          startedAt: now - 3600000,
+          completedAt: now,
+          createdAt: now,
+          updatedAt: now,
+          notes: importResult.notes,
+        });
+
+        for (const ex of importResult.exercises) {
+          const seId = crypto.randomUUID();
+          await db.sessionExercises.add({
+            id: seId,
+            sessionId,
+            exerciseId: ex.exerciseId,
+            order: ex.order,
+            status: "completed",
+            targetSets: ex.sets.length,
+            createdAt: now,
+            updatedAt: now,
+          });
+
+          for (const set of ex.sets) {
+            await db.workoutSets.add({
+              id: crypto.randomUUID(),
+              sessionId,
+              sessionExerciseId: seId,
+              exerciseId: ex.exerciseId,
+              setNumber: set.setNumber,
+              setType: "working",
+              weightKg: set.weightKg,
+              reps: set.reps,
+              completedAt: now,
+              updatedAt: now,
+            });
+          }
+        }
+      }
+    );
+
+    setShowImportDialog(false);
+    setImportText("");
+    setImportResult(null);
+    setImportState("idle");
+  };
+
   return (
     <div className="relative max-w-md mx-auto min-h-screen pb-24 bg-background overflow-hidden">
       {/* Decorative Blur Backgrounds */}
@@ -588,6 +684,17 @@ export default function TodayPage() {
         </Button>
       </div>
 
+      <div className="px-5 mb-0 relative z-10">
+        <Button
+          variant="ghost"
+          onClick={() => { setShowImportDialog(true); setImportState("idle"); setImportText(""); setImportResult(null); setImportError(""); }}
+          className="w-full h-10 rounded-2xl text-xs font-medium text-muted-foreground hover:text-foreground border border-dashed border-border hover:border-primary/30 transition-colors"
+        >
+          <FileTextIcon className="w-3.5 h-3.5 mr-1.5" />
+          Import from AI chat log
+        </Button>
+      </div>
+
       {/* Fullscreen AI Loading */}
       <AnimatePresence>
         {generationState === "loading" && (
@@ -692,6 +799,107 @@ export default function TodayPage() {
           </div>
         </div>
       )}
+
+      {/* Import AI Log Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={(open) => { setShowImportDialog(open); if (!open) { setImportState("idle"); } }}>
+        <DialogContent className="max-w-sm p-5">
+          {importState === "idle" && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-display font-bold text-foreground mb-1">Import AI Workout Log</h2>
+                <p className="text-sm text-muted-foreground">
+                  Paste your gym log from ChatGPT, Claude, or any AI you use to track workouts.
+                </p>
+              </div>
+              <textarea
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+                placeholder={`e.g.\nMonday Back Day:\n- Lat pulldown 30kg 3x10\n- Seated cable row 25kg 3x12\n- Dumbbell curl 10kg 3x12`}
+                className="w-full h-40 rounded-xl border border-border bg-muted/50 p-3 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              <Button
+                onClick={handleImportLog}
+                disabled={!importText.trim()}
+                className="w-full h-11 rounded-xl font-semibold"
+              >
+                <FileTextIcon className="w-4 h-4 mr-2" />
+                Parse with Yono AI
+              </Button>
+            </div>
+          )}
+
+          {importState === "loading" && (
+            <div className="flex flex-col items-center py-8">
+              <YonoAnimation state="thinking" size={80} />
+              <p className="text-sm text-muted-foreground mt-4">Yono is reading your workout log...</p>
+            </div>
+          )}
+
+          {importState === "error" && (
+            <div className="space-y-4">
+              <div className="flex items-start gap-2 p-3 bg-destructive/10 rounded-xl text-destructive text-sm">
+                <AlertCircleIcon className="w-4 h-4 mt-0.5 shrink-0" />
+                {importError || "Something went wrong."}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setImportState("idle")}>
+                  Back
+                </Button>
+                <Button className="flex-1" onClick={handleImportLog}>
+                  Retry
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {importState === "success" && importResult && (
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-display font-bold text-foreground">{importResult.sessionName}</h2>
+                {importResult.source && (
+                  <p className="text-xs text-muted-foreground mt-0.5">From: {importResult.source}</p>
+                )}
+              </div>
+
+              {importResult.confidence < 0.7 && (
+                <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2">
+                  <AlertCircleIcon className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Low parsing confidence. Please review the exercises below before saving.
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-2 max-h-56 overflow-y-auto">
+                {importResult.exercises.map((ex, i) => {
+                  const def = exercises.find((e) => e.id === ex.exerciseId);
+                  return (
+                    <div key={i} className="p-3 bg-muted/50 rounded-xl">
+                      <p className="font-medium text-foreground text-sm">
+                        {i + 1}. {def?.name ?? ex.exerciseId}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {ex.sets.map((s) =>
+                          `${s.weightKg ? s.weightKg + "kg " : ""}${s.reps ? s.reps + " reps" : ""}`
+                        ).join(" | ")}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setImportState("idle")}>
+                  Cancel
+                </Button>
+                <Button className="flex-1" onClick={handleConfirmImport}>
+                  Save {importResult.exercises.length} exercises
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

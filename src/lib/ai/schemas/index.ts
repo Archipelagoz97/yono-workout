@@ -294,3 +294,36 @@ export const ProposeMemoryRequestSchema = z.object({
   ),
   existingMemories: z.array(z.unknown()),
 });
+
+// ─────────────────────────────────────────────────────────
+// BULK IMPORT LOG (paste workout diary to json)
+// ─────────────────────────────────────────────────────────
+
+export const BulkImportLogRequestSchema = z.object({
+  text: z.string().min(1).max(3000),
+});
+
+export const BulkImportLogResponseSchema = z.object({
+  sessionName: z.string().min(1).max(80),
+  source: z.string().max(200).optional(),
+  exercises: z
+    .array(
+      z.object({
+        exerciseId: z.string().min(1),
+        order: z.number().int().positive(),
+        sets: z.array(
+          z.object({
+            setNumber: z.number().int().positive(),
+            weightKg: z.number().nonnegative().optional(),
+            reps: z.number().int().nonnegative().optional(),
+          })
+        ),
+      })
+    )
+    .min(1)
+    .max(15),
+  confidence: z.number().min(0).max(1),
+  notes: z.string().max(300).optional(),
+});
+
+export type BulkImportLogResult = z.infer<typeof BulkImportLogResponseSchema>;

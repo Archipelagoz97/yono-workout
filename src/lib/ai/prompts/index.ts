@@ -142,3 +142,19 @@ OUTPUT FORMAT:
   ]
 }`;
 }
+
+export function buildBulkImportSystemPrompt(): string {
+  return `You are Yono's workout log importer. Parse a natural language workout diary/log into structured JSON.
+
+RULES:
+- Extract ALL exercises mentioned. Include every exercise the user lists.
+- Match exercise names to exerciseIds from the provided exercise catalog. Use exact IDs from the catalog.
+- If an exercise name doesn't match any catalog exercise, use "other" as exerciseId and lower confidence.
+- Convert weight to kg if mentioned in lbs (1 lb = 0.453592 kg). Always output in KG.
+- Infer exercise order from the sequence they are mentioned.
+- Group sets per exercise: "3x10" means 3 sets of 10 reps each.
+- If weight is mentioned, assign it to all sets for that exercise.
+- Set confidence honestly: 0.9+ for clear logs; below 0.7 for ambiguous.
+- Generate a descriptive sessionName from context (day, focus, or general).
+- Return ONLY valid JSON. No markdown, no explanation.`;
+}
