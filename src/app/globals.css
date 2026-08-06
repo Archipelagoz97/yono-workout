@@ -1,0 +1,294 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ─────────────────────────────────────────────────────────
+   YONO DESIGN TOKENS
+   Warm, modern, mobile-first.
+   Not the typical red-and-black gym aesthetic.
+───────────────────────────────────────────────────────── */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Outfit", "Inter", system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-display);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ── LIGHT MODE ─────────────────────────────────────────── */
+:root {
+  /* Warm cream + brown palette */
+  --background: oklch(0.97 0.012 80);          /* warm cream */
+  --foreground: oklch(0.22 0.03 50);            /* dark charcoal */
+  --card: oklch(1 0 0);                          /* soft white */
+  --card-foreground: oklch(0.22 0.03 50);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.03 50);
+  --primary: oklch(0.45 0.08 60);               /* warm brown */
+  --primary-foreground: oklch(0.98 0.01 80);
+  --secondary: oklch(0.78 0.07 150);            /* sage green */
+  --secondary-foreground: oklch(0.25 0.04 150);
+  --muted: oklch(0.93 0.01 80);
+  --muted-foreground: oklch(0.52 0.04 50);
+  --accent: oklch(0.72 0.14 50);               /* soft orange */
+  --accent-foreground: oklch(0.22 0.03 50);
+  --destructive: oklch(0.62 0.20 20);
+  --border: oklch(0.90 0.02 80);
+  --input: oklch(0.92 0.02 80);
+  --ring: oklch(0.45 0.08 60);
+  --radius: 0.875rem;
+
+  /* Yono brand colors */
+  --yono-primary: oklch(0.45 0.08 60);         /* warm brown */
+  --yono-accent: oklch(0.72 0.14 50);          /* soft orange */
+  --yono-sage: oklch(0.78 0.07 150);           /* sage green */
+  --yono-lavender: oklch(0.78 0.08 290);       /* muted lavender */
+  --yono-amber: oklch(0.80 0.14 80);           /* warm amber */
+  --yono-success: oklch(0.60 0.12 145);        /* muted green */
+
+  /* Chart colors */
+  --chart-1: oklch(0.72 0.14 50);
+  --chart-2: oklch(0.78 0.07 150);
+  --chart-3: oklch(0.78 0.08 290);
+  --chart-4: oklch(0.45 0.08 60);
+  --chart-5: oklch(0.80 0.14 80);
+
+  --sidebar: oklch(0.94 0.015 80);
+  --sidebar-foreground: oklch(0.22 0.03 50);
+  --sidebar-primary: oklch(0.45 0.08 60);
+  --sidebar-primary-foreground: oklch(0.98 0.01 80);
+  --sidebar-accent: oklch(0.90 0.02 80);
+  --sidebar-accent-foreground: oklch(0.22 0.03 50);
+  --sidebar-border: oklch(0.88 0.02 80);
+  --sidebar-ring: oklch(0.45 0.08 60);
+}
+
+/* ── DARK MODE ──────────────────────────────────────────── */
+.dark {
+  --background: oklch(0.18 0.02 250);          /* deep warm navy */
+  --foreground: oklch(0.95 0.01 80);            /* warm white */
+  --card: oklch(0.24 0.02 240);                /* dark gray-brown */
+  --card-foreground: oklch(0.95 0.01 80);
+  --popover: oklch(0.24 0.02 240);
+  --popover-foreground: oklch(0.95 0.01 80);
+  --primary: oklch(0.85 0.04 80);               /* soft beige */
+  --primary-foreground: oklch(0.22 0.02 240);
+  --secondary: oklch(0.35 0.03 240);
+  --secondary-foreground: oklch(0.95 0.01 80);
+  --muted: oklch(0.30 0.02 240);
+  --muted-foreground: oklch(0.65 0.02 80);
+  --accent: oklch(0.72 0.14 50);               /* muted orange */
+  --accent-foreground: oklch(0.95 0.01 80);
+  --destructive: oklch(0.70 0.18 20);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 12%);
+  --ring: oklch(0.65 0.08 60);
+
+  /* Yono brand colors - dark */
+  --yono-primary: oklch(0.85 0.04 80);
+  --yono-accent: oklch(0.72 0.14 50);
+  --yono-sage: oklch(0.65 0.10 150);
+  --yono-lavender: oklch(0.72 0.10 290);
+  --yono-amber: oklch(0.78 0.12 80);
+  --yono-success: oklch(0.58 0.12 145);
+
+  --chart-1: oklch(0.72 0.14 50);
+  --chart-2: oklch(0.65 0.10 150);
+  --chart-3: oklch(0.72 0.10 290);
+  --chart-4: oklch(0.85 0.04 80);
+  --chart-5: oklch(0.78 0.12 80);
+
+  --sidebar: oklch(0.22 0.02 240);
+  --sidebar-foreground: oklch(0.95 0.01 80);
+  --sidebar-primary: oklch(0.85 0.04 80);
+  --sidebar-primary-foreground: oklch(0.22 0.02 240);
+  --sidebar-accent: oklch(0.28 0.02 240);
+  --sidebar-accent-foreground: oklch(0.95 0.01 80);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.65 0.08 60);
+}
+
+/* ─────────────────────────────────────────────────────────
+   BASE STYLES
+───────────────────────────────────────────────────────── */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    @apply antialiased;
+    font-family: "Inter", system-ui, sans-serif;
+    /* Prevent iOS text size adjustment */
+    -webkit-text-size-adjust: 100%;
+    /* Safe area support for notched phones */
+    padding-top: env(safe-area-inset-top);
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    /* Tabular numbers for workout stats */
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Outfit", "Inter", system-ui, sans-serif;
+    @apply font-semibold;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+   YONO CUSTOM UTILITIES
+───────────────────────────────────────────────────────── */
+
+@layer utilities {
+  /* Mobile safe area */
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 1rem);
+  }
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top), 0px);
+  }
+
+  /* Gradient backgrounds */
+  .yono-gradient {
+    background: linear-gradient(
+      135deg,
+      oklch(0.97 0.015 80) 0%,
+      oklch(0.94 0.02 80) 100%
+    );
+  }
+  .dark .yono-gradient {
+    background: linear-gradient(
+      135deg,
+      oklch(0.18 0.02 250) 0%,
+      oklch(0.22 0.025 245) 100%
+    );
+  }
+
+  /* Card glow effect for PRs */
+  .yono-glow-pr {
+    box-shadow: 0 0 20px oklch(0.72 0.14 50 / 0.3);
+  }
+
+  /* Large touch targets */
+  .touch-target {
+    min-height: 48px;
+    min-width: 48px;
+  }
+
+  /* Numeric input styling */
+  .numeric-display {
+    font-variant-numeric: tabular-nums;
+    @apply text-4xl font-bold tracking-tight;
+  }
+
+  /* Rest timer pulse */
+  .timer-active {
+    animation: timerPulse 1s ease-in-out infinite;
+  }
+
+  @keyframes timerPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  /* Yono bounce */
+  .yono-bounce {
+    animation: yonoBounce 0.6s ease-out;
+  }
+
+  @keyframes yonoBounce {
+    0% { transform: translateY(0); }
+    40% { transform: translateY(-12px); }
+    60% { transform: translateY(-6px); }
+    80% { transform: translateY(-3px); }
+    100% { transform: translateY(0); }
+  }
+
+  /* Shimmer loading skeleton */
+  .skeleton {
+    animation: shimmer 1.5s infinite;
+    background: linear-gradient(
+      90deg,
+      var(--muted) 25%,
+      oklch(0.95 0.01 80) 50%,
+      var(--muted) 75%
+    );
+    background-size: 200% 100%;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  /* Bottom nav height variable */
+  .bottom-nav-height {
+    height: 64px;
+  }
+
+  /* Content area above bottom nav */
+  .content-with-nav {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 1rem);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────
+   REDUCED MOTION
+───────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .yono-bounce,
+  .timer-active,
+  .skeleton {
+    animation: none;
+  }
+
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
