@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ZapIcon, ClockIcon, FlameIcon, WrenchIcon, RefreshCwIcon, PlayIcon, AlertCircleIcon, Settings2Icon, InfoIcon } from "lucide-react";
+import { ZapIcon, ClockIcon, FlameIcon, WrenchIcon, RefreshCwIcon, PlayIcon, AlertCircleIcon, Settings2Icon, InfoIcon, PlusIcon, XIcon, TrashIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { YonoAnimation } from "@/components/yono/YonoAnimation";
 import { ExerciseDetailsDialog } from "@/components/workout/ExerciseDetailsDialog";
+import { ExerciseSelectorDialog } from "@/components/workout/ExerciseSelectorDialog";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { getCopy } from "@/data/yono-copy";
 import db from "@/db/database";
@@ -522,7 +523,26 @@ export default function TodayPage() {
           size="lg"
         >
           <ZapIcon className="w-5 h-5 mr-2" />
-          Generate workout
+          Generate AI
+        </Button>
+        <Button
+          id="btn-manual-workout"
+          variant="secondary"
+          onClick={() => {
+            setSuggestion({
+              sessionName: "Custom Workout",
+              reason: "A manually built workout.",
+              estimatedMinutes: 45,
+              exercises: [],
+            });
+            setGenerationState("success");
+          }}
+          disabled={generationState === "loading" || !gym}
+          className="flex-1 h-14 rounded-2xl font-bold shadow-sm"
+          size="lg"
+        >
+          <PlusIcon className="w-5 h-5 mr-2" />
+          Build Manual
         </Button>
       </div>
 
@@ -576,6 +596,34 @@ export default function TodayPage() {
                   };
                 });
               }}
+              onAddExercise={(newId) => {
+                setSuggestion((prev: any) => {
+                  if (!prev) return prev;
+                  return {
+                    ...prev,
+                    exercises: [
+                      ...prev.exercises,
+                      {
+                        exerciseId: newId,
+                        order: prev.exercises.length,
+                        targetSets: 3,
+                        targetRepMin: 8,
+                        targetRepMax: 12,
+                        restSeconds: 90,
+                      }
+                    ]
+                  };
+                });
+              }}
+              onRemoveExercise={(id) => {
+                setSuggestion((prev: any) => {
+                  if (!prev) return prev;
+                  return {
+                    ...prev,
+                    exercises: prev.exercises.filter((e: any) => e.exerciseId !== id)
+                  };
+                });
+              }}
             />
           ) : null}
         </DialogContent>
@@ -601,6 +649,8 @@ function WorkoutSuggestionCard({
   onStart,
   onRegenerate,
   onReplaceExercise,
+  onAddExercise,
+  onRemoveExercise,
 }: {
   suggestion: {
     sessionName: string;
@@ -620,8 +670,11 @@ function WorkoutSuggestionCard({
   onStart: () => void;
   onRegenerate: () => void;
   onReplaceExercise: (oldId: string, newId: string) => void;
+  onAddExercise: (newId: string) => void;
+  onRemoveExercise: (id: string) => void;
 }) {
   const [detailsExId, setDetailsExId] = useState<string | null>(null);
+  const [showAddSelector, setShowAddSelector] = useState(false);
 
   return (
     <motion.div
@@ -685,9 +738,25 @@ function WorkoutSuggestionCard({
                     {" · "}{ex.restSeconds}s rest
                   </p>
                 </div>
+                
+                <button
+                  onClick={() => onRemoveExercise(ex.exerciseId)}
+                  className="p-2 text-muted-foreground hover:text-destructive transition-colors ml-2"
+                >
+                  <TrashIcon className="w-4 h-4" />
+                </button>
               </div>
             );
           })}
+          
+          <Button 
+            variant="outline" 
+            className="w-full border-dashed mt-2 rounded-xl"
+            onClick={() => setShowAddSelector(true)}
+          >
+            <PlusIcon className="w-4 h-4 mr-2" />
+            Add Exercise
+          </Button>
         </div>
 
         {/* Actions */}
@@ -717,6 +786,15 @@ function WorkoutSuggestionCard({
         onReplace={(newId) => {
           if (detailsExId) onReplaceExercise(detailsExId, newId);
           setDetailsExId(null);
+        }}
+      />
+      
+      <ExerciseSelectorDialog 
+        open={showAddSelector}
+        onOpenChange={setShowAddSelector}
+        onSelect={(newId) => {
+          onAddExercise(newId);
+          setShowAddSelector(false);
         }}
       />
     </motion.div>
