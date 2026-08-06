@@ -244,23 +244,22 @@ function YonoThinking() {
 }
 
 function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
-  // Different arm positions based on exercise family
   const armConfig: Record<YonoAnimationFamily, { armLeft: number; armRight: number; earAngle: number }> = {
-    vertical_pull: { armLeft: -45, armRight: 45, earAngle: -5 },
+    vertical_pull: { armLeft: -110, armRight: 110, earAngle: -5 },
     horizontal_pull: { armLeft: -30, armRight: 30, earAngle: 5 },
     horizontal_push: { armLeft: 30, armRight: -30, earAngle: 5 },
-    vertical_push: { armLeft: -60, armRight: 60, earAngle: -10 },
-    squat: { armLeft: 15, armRight: -15, earAngle: 0 },
+    vertical_push: { armLeft: -120, armRight: 120, earAngle: -10 },
+    squat: { armLeft: 25, armRight: -25, earAngle: 0 },
     leg_press: { armLeft: 10, armRight: -10, earAngle: 0 },
-    hip_hinge: { armLeft: 30, armRight: -30, earAngle: 5 },
-    curl: { armLeft: -60, armRight: 60, earAngle: -5 },
-    tricep_extension: { armLeft: -45, armRight: 45, earAngle: -5 },
+    hip_hinge: { armLeft: 0, armRight: 0, earAngle: 5 },
+    curl: { armLeft: -40, armRight: 40, earAngle: -5 },
+    tricep_extension: { armLeft: -100, armRight: 100, earAngle: -5 },
     lateral_raise: { armLeft: -80, armRight: 80, earAngle: -10 },
-    rear_delt: { armLeft: -45, armRight: 45, earAngle: 0 },
+    rear_delt: { armLeft: -30, armRight: 30, earAngle: 0 },
     core_hold: { armLeft: 0, armRight: 0, earAngle: 0 },
-    running: { armLeft: -30, armRight: 30, earAngle: 10 },
+    running: { armLeft: -40, armRight: 40, earAngle: 10 },
     cycling: { armLeft: 20, armRight: -20, earAngle: 0 },
-    rowing_cardio: { armLeft: -30, armRight: 30, earAngle: 0 },
+    rowing_cardio: { armLeft: -40, armRight: 40, earAngle: 0 },
     stair_climbing: { armLeft: -20, armRight: 20, earAngle: 5 },
     generic_machine: { armLeft: -20, armRight: 20, earAngle: 0 },
     generic_dumbbell: { armLeft: -40, armRight: 40, earAngle: -5 },
@@ -269,29 +268,174 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
 
   const config = armConfig[family] ?? armConfig.generic_machine;
 
-  const isSquat = family === "squat";
-  return (
-    <motion.g
-      animate={{
-        y: isSquat ? [0, 15, 0, 15, 0] : [0, -4, 0, -4, 0],
-      }}
-      transition={{ duration: isSquat ? 2.5 : 1.5, repeat: Infinity, ease: "easeInOut" }}
-    >
-      {isSquat && (
+  let yAnim = [0, -4, 0, -4, 0];
+  let duration = 1.5;
+  let bgProps: React.ReactNode = null;
+  let yonoBgProps: React.ReactNode = null;
+  let yonoFgProps: React.ReactNode = null;
+  let fgProps: React.ReactNode = null;
+
+  switch (family) {
+    case "squat":
+      yAnim = [0, 15, 0, 15, 0];
+      duration = 2.5;
+      yonoBgProps = (
         <g>
-          {/* Barbell behind neck */}
           <rect x="10" y="42" width="100" height="4" fill="#94a3b8" />
           <circle cx="10" cy="44" r="6" fill="#64748b" />
           <circle cx="110" cy="44" r="6" fill="#64748b" />
         </g>
-      )}
-      <YonoBase
-        expression="focused"
-        earAngle={config.earAngle}
-        armLeft={config.armLeft}
-        armRight={config.armRight}
-      />
-    </motion.g>
+      );
+      break;
+
+    case "vertical_pull":
+      yAnim = [15, 0, 15, 0, 15];
+      duration = 2.5;
+      bgProps = (
+        <g>
+          <rect x="20" y="5" width="80" height="4" fill="#475569" />
+          <rect x="30" y="0" width="4" height="20" fill="#475569" />
+          <rect x="86" y="0" width="4" height="20" fill="#475569" />
+        </g>
+      );
+      break;
+
+    case "horizontal_push":
+      yAnim = [0, -2, 0, -2, 0];
+      fgProps = (
+        <motion.g animate={{ y: [-10, 10, -10, 10, -10] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}>
+          <rect x="20" y="50" width="80" height="4" fill="#94a3b8" />
+          <circle cx="20" cy="52" r="8" fill="#64748b" />
+          <circle cx="100" cy="52" r="8" fill="#64748b" />
+        </motion.g>
+      );
+      break;
+
+    case "horizontal_pull":
+    case "rowing_cardio":
+      yAnim = [0, 3, 0, 3, 0];
+      duration = 2;
+      fgProps = (
+        <motion.g animate={{ x: [5, -5, 5, -5, 5] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}>
+          <rect x="40" y="65" width="40" height="4" fill="#94a3b8" />
+          <path d="M60 65 L80 120" stroke="#475569" strokeWidth="2" />
+        </motion.g>
+      );
+      break;
+
+    case "vertical_push":
+      yAnim = [0, 2, 0, 2, 0];
+      fgProps = (
+        <motion.g animate={{ y: [0, -30, 0, -30, 0] }} transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}>
+          {/* Left Dumbbell */}
+          <rect x="22" y="30" width="16" height="4" fill="#94a3b8" />
+          <rect x="18" y="25" width="4" height="14" fill="#475569" />
+          <rect x="38" y="25" width="4" height="14" fill="#475569" />
+          {/* Right Dumbbell */}
+          <rect x="82" y="30" width="16" height="4" fill="#94a3b8" />
+          <rect x="78" y="25" width="4" height="14" fill="#475569" />
+          <rect x="98" y="25" width="4" height="14" fill="#475569" />
+        </motion.g>
+      );
+      break;
+
+    case "curl":
+    case "generic_dumbbell":
+      yAnim = [0, 2, 0, 2, 0];
+      fgProps = (
+        <motion.g animate={{ y: [20, 0, 20, 0, 20] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}>
+          <rect x="25" y="65" width="10" height="4" fill="#94a3b8" />
+          <rect x="22" y="61" width="3" height="12" fill="#475569" />
+          <rect x="35" y="61" width="3" height="12" fill="#475569" />
+          
+          <rect x="85" y="65" width="10" height="4" fill="#94a3b8" />
+          <rect x="82" y="61" width="3" height="12" fill="#475569" />
+          <rect x="95" y="61" width="3" height="12" fill="#475569" />
+        </motion.g>
+      );
+      break;
+
+    case "leg_press":
+      yAnim = [0, -2, 0, -2, 0];
+      bgProps = (
+        <motion.g animate={{ x: [10, -10, 10, -10, 10], y: [-10, 10, -10, 10, -10] }} transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}>
+          <rect x="70" y="20" width="30" height="40" rx="4" fill="#94a3b8" />
+          <circle cx="85" cy="40" r="8" fill="#64748b" />
+        </motion.g>
+      );
+      break;
+
+    case "running":
+      yAnim = [0, -6, 0, -6, 0];
+      duration = 0.6;
+      bgProps = <rect x="20" y="100" width="80" height="4" fill="#475569" />;
+      break;
+
+    case "cycling":
+      yAnim = [0, -2, 0, -2, 0];
+      duration = 0.8;
+      yonoFgProps = <circle cx="60" cy="85" r="20" fill="none" stroke="#94a3b8" strokeWidth="4" />;
+      break;
+
+    case "lateral_raise":
+      fgProps = (
+        <motion.g animate={{ y: [0, -25, 0, -25, 0], x: [0, -5, 0, -5, 0] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}>
+          <circle cx="20" cy="70" r="5" fill="#475569" />
+        </motion.g>
+      );
+      const fgPropsRight = (
+        <motion.g animate={{ y: [0, -25, 0, -25, 0], x: [0, 5, 0, 5, 0] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}>
+          <circle cx="100" cy="70" r="5" fill="#475569" />
+        </motion.g>
+      );
+      fgProps = <>{fgProps}{fgPropsRight}</>;
+      break;
+
+    case "tricep_extension":
+      fgProps = (
+        <motion.g animate={{ y: [-10, 20, -10, 20, -10] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}>
+          <path d="M60 0 L60 50" stroke="#94a3b8" strokeWidth="2" />
+          <rect x="50" y="50" width="20" height="6" rx="3" fill="#475569" />
+        </motion.g>
+      );
+      break;
+
+    case "hip_hinge":
+    case "generic_barbell":
+      yAnim = [0, 10, 0, 10, 0];
+      duration = 2.5;
+      fgProps = (
+        <motion.g animate={{ y: [0, 15, 0, 15, 0] }} transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}>
+          <rect x="20" y="70" width="80" height="4" fill="#94a3b8" />
+          <circle cx="20" cy="72" r="8" fill="#64748b" />
+          <circle cx="100" cy="72" r="8" fill="#64748b" />
+        </motion.g>
+      );
+      break;
+
+    default:
+      // core_hold, rear_delt, stair_climbing, generic_machine
+      break;
+  }
+
+  return (
+    <g>
+      {bgProps}
+      <motion.g
+        animate={{ y: yAnim }}
+        transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
+      >
+        {yonoBgProps}
+        <YonoBase
+          expression="focused"
+          earAngle={config.earAngle}
+          armLeft={config.armLeft}
+          armRight={config.armRight}
+        />
+        {yonoFgProps}
+      </motion.g>
+      {fgProps}
+    </g>
   );
 }
 
