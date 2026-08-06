@@ -57,6 +57,82 @@ interface YonoAnimationProps {
   className?: string;
 }
 
+function YonoHead({
+  expression = "neutral",
+  earAngle = 0,
+  eyeScale = 1,
+}: {
+  expression?: "neutral" | "happy" | "tired" | "focused" | "surprised";
+  earAngle?: number;
+  eyeScale?: number;
+}) {
+  return (
+    <g>
+      {/* Head */}
+      <ellipse cx="0" cy="0" rx="26" ry="24" fill="#E8C49A" />
+
+      {/* Ears */}
+      <motion.g
+        animate={{ rotate: earAngle }}
+        style={{ transformOrigin: "-15px -13px" }}
+        transition={{ type: "spring", stiffness: 200 }}
+      >
+        <ellipse cx="-19" cy="-15" rx="10" ry="15" fill="#C4905A" />
+        <ellipse cx="-19" cy="-15" rx="6" ry="10" fill="#E8C49A" />
+      </motion.g>
+      <motion.g
+        animate={{ rotate: -earAngle }}
+        style={{ transformOrigin: "19px -13px" }}
+        transition={{ type: "spring", stiffness: 200 }}
+      >
+        <ellipse cx="19" cy="-15" rx="10" ry="15" fill="#C4905A" />
+        <ellipse cx="19" cy="-15" rx="6" ry="10" fill="#E8C49A" />
+      </motion.g>
+
+      {/* Eyes */}
+      <motion.g animate={{ scaleY: eyeScale }} style={{ transformOrigin: "-8px -1px" }}>
+        <ellipse cx="-8" cy="-1" rx="5" ry={expression === "tired" ? 3 : 5} fill="#3D2B1F" />
+        <ellipse cx="-10" cy="-3" rx="1.5" ry="1.5" fill="white" opacity="0.8" />
+      </motion.g>
+      <motion.g animate={{ scaleY: eyeScale }} style={{ transformOrigin: "8px -1px" }}>
+        <ellipse cx="8" cy="-1" rx="5" ry={expression === "tired" ? 3 : 5} fill="#3D2B1F" />
+        <ellipse cx="6" cy="-3" rx="1.5" ry="1.5" fill="white" opacity="0.8" />
+      </motion.g>
+
+      {/* Eyebrows */}
+      {expression === "focused" && (
+        <>
+          <path d="M-12 -8 Q-8 -11 -4 -8" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+          <path d="M4 -8 Q8 -11 12 -8" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+        </>
+      )}
+      {expression === "surprised" && (
+        <>
+          <path d="M-12 -9 Q-8 -13 -4 -9" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+          <path d="M4 -9 Q8 -13 12 -9" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+        </>
+      )}
+
+      {/* Nose */}
+      <ellipse cx="0" cy="8" rx="5" ry="3.5" fill="#3D2B1F" />
+      <ellipse cx="-1" cy="7" rx="1.5" ry="1" fill="white" opacity="0.5" />
+
+      {/* Mouth */}
+      {expression === "happy" ? (
+        <path d="M-5 13 Q0 18 5 13" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+      ) : expression === "tired" ? (
+        <path d="M-5 14 Q0 12 5 14" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+      ) : (
+        <path d="M-5 13 Q0 16 5 13" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+      )}
+
+      {/* Sweatband */}
+      <rect x="-24" y="-11" width="48" height="6" rx="3" fill="#F4845F" opacity="0.9" />
+      <rect x="-6" y="-13" width="12" height="4" rx="2" fill="#E8643F" />
+    </g>
+  );
+}
+
 // ─── Yono SVG Base Dog ─────────────────────────────────────
 function YonoBase({
   expression = "neutral",
@@ -81,66 +157,9 @@ function YonoBase({
       <ellipse cx="60" cy="75" rx="28" ry="22" fill="#D4A57A" />
 
       {/* Head */}
-      <ellipse cx="60" cy="45" rx="26" ry="24" fill="#E8C49A" />
-
-      {/* Ears */}
-      <motion.g
-        animate={{ rotate: earAngle }}
-        style={{ transformOrigin: "45px 32px" }}
-        transition={{ type: "spring", stiffness: 200 }}
-      >
-        <ellipse cx="41" cy="30" rx="10" ry="15" fill="#C4905A" />
-        <ellipse cx="41" cy="30" rx="6" ry="10" fill="#E8C49A" />
-      </motion.g>
-      <motion.g
-        animate={{ rotate: -earAngle }}
-        style={{ transformOrigin: "79px 32px" }}
-        transition={{ type: "spring", stiffness: 200 }}
-      >
-        <ellipse cx="79" cy="30" rx="10" ry="15" fill="#C4905A" />
-        <ellipse cx="79" cy="30" rx="6" ry="10" fill="#E8C49A" />
-      </motion.g>
-
-      {/* Eyes */}
-      <motion.g animate={{ scaleY: eyeScale }} style={{ transformOrigin: "52px 44px" }}>
-        <ellipse cx="52" cy="44" rx="5" ry={expression === "tired" ? 3 : 5} fill="#3D2B1F" />
-        <ellipse cx="50" cy="42" rx="1.5" ry="1.5" fill="white" opacity="0.8" />
-      </motion.g>
-      <motion.g animate={{ scaleY: eyeScale }} style={{ transformOrigin: "68px 44px" }}>
-        <ellipse cx="68" cy="44" rx="5" ry={expression === "tired" ? 3 : 5} fill="#3D2B1F" />
-        <ellipse cx="66" cy="42" rx="1.5" ry="1.5" fill="white" opacity="0.8" />
-      </motion.g>
-
-      {/* Eyebrows */}
-      {expression === "focused" && (
-        <>
-          <path d="M48 37 Q52 34 56 37" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-          <path d="M64 37 Q68 34 72 37" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-        </>
-      )}
-      {expression === "surprised" && (
-        <>
-          <path d="M48 36 Q52 32 56 36" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-          <path d="M64 36 Q68 32 72 36" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-        </>
-      )}
-
-      {/* Nose */}
-      <ellipse cx="60" cy="53" rx="5" ry="3.5" fill="#3D2B1F" />
-      <ellipse cx="59" cy="52" rx="1.5" ry="1" fill="white" opacity="0.5" />
-
-      {/* Mouth */}
-      {expression === "happy" ? (
-        <path d="M55 58 Q60 63 65 58" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-      ) : expression === "tired" ? (
-        <path d="M55 59 Q60 57 65 59" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-      ) : (
-        <path d="M55 58 Q60 61 65 58" stroke="#3D2B1F" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-      )}
-
-      {/* Sweatband */}
-      <rect x="36" y="34" width="48" height="6" rx="3" fill="#F4845F" opacity="0.9" />
-      <rect x="54" y="32" width="12" height="4" rx="2" fill="#E8643F" />
+      <g transform="translate(60, 45)">
+        <YonoHead expression={expression} earAngle={earAngle} eyeScale={eyeScale} />
+      </g>
 
       {/* Arms */}
       <motion.g
@@ -342,20 +361,6 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
 
   return (
     <g>
-      <defs>
-        <linearGradient id="neonGlow" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#3b82f6" />
-          <stop offset="100%" stopColor="#8b5cf6" />
-        </linearGradient>
-        <filter id="glow">
-          <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-          <feMerge>
-            <feMergeNode in="coloredBlur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-
       {/* Equipment (Simple Dumbbell/Barbell visual based on wrist pos) */}
       <motion.circle
         animate={{ cx: anim("w", 0), cy: anim("w", 1) }}
@@ -364,43 +369,68 @@ function YonoPerforming({ family }: { family: YonoAnimationFamily }) {
         fill="#94a3b8"
       />
 
-      {/* Articulated Body Lines */}
-      <g stroke="url(#neonGlow)" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" filter="url(#glow)">
-        {/* Torso */}
-        <motion.line
-          animate={{ x1: anim("s", 0), y1: anim("s", 1), x2: anim("p", 0), y2: anim("p", 1) }}
-          transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
-        />
+      {/* Articulated Dog Body */}
+      <g strokeLinecap="round" strokeLinejoin="round">
         {/* Upper Leg */}
         <motion.line
           animate={{ x1: anim("p", 0), y1: anim("p", 1), x2: anim("k", 0), y2: anim("k", 1) }}
           transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
+          stroke="#C4905A"
+          strokeWidth="12"
         />
         {/* Lower Leg */}
         <motion.line
           animate={{ x1: anim("k", 0), y1: anim("k", 1), x2: anim("f", 0), y2: anim("f", 1) }}
           transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
+          stroke="#C4905A"
+          strokeWidth="12"
         />
+        {/* Foot Paw Overlay */}
+        <motion.circle
+          animate={{ cx: anim("f", 0), cy: anim("f", 1) }}
+          transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
+          r="6"
+          fill="#E8C49A"
+        />
+        
+        {/* Torso */}
+        <motion.line
+          animate={{ x1: anim("s", 0), y1: anim("s", 1), x2: anim("p", 0), y2: anim("p", 1) }}
+          transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
+          stroke="#D4A57A"
+          strokeWidth="24"
+        />
+        
         {/* Upper Arm */}
         <motion.line
           animate={{ x1: anim("s", 0), y1: anim("s", 1), x2: anim("e", 0), y2: anim("e", 1) }}
           transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
+          stroke="#C4905A"
+          strokeWidth="10"
         />
         {/* Lower Arm */}
         <motion.line
           animate={{ x1: anim("e", 0), y1: anim("e", 1), x2: anim("w", 0), y2: anim("w", 1) }}
           transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
+          stroke="#C4905A"
+          strokeWidth="10"
+        />
+        {/* Hand Paw Overlay */}
+        <motion.circle
+          animate={{ cx: anim("w", 0), cy: anim("w", 1) }}
+          transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
+          r="5"
+          fill="#E8C49A"
         />
       </g>
 
       {/* Head */}
-      <motion.circle
-        animate={{ cx: anim("h", 0), cy: anim("h", 1) }}
+      <motion.g
+        animate={{ x: anim("h", 0), y: anim("h", 1) }}
         transition={{ duration, repeat: Infinity, ease: "easeInOut" }}
-        r="9"
-        fill="#e2e8f0"
-        filter="url(#glow)"
-      />
+      >
+        <YonoHead expression="focused" earAngle={-5} />
+      </motion.g>
     </g>
   );
 }
