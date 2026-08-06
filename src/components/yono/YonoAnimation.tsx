@@ -296,148 +296,184 @@ function YonoPerforming({
     start[joint][axis] + offset
   ];
 
-  // Equipment selection
+  // ─────────────────────────────────────────────────────────
+  // EQUIPMENT & ENVIRONMENT VISUALS (HOLOGRAPHIC STYLE)
+  // ─────────────────────────────────────────────────────────
   let eqVisual = null;
   if (eq === "barbell") {
     eqVisual = (
       <g>
-        <rect x="-35" y="-3" width="70" height="6" fill="#94a3b8" rx="3" />
-        <rect x="-30" y="-15" width="8" height="30" rx="2" fill="#475569" />
-        <rect x="22" y="-15" width="8" height="30" rx="2" fill="#475569" />
+        <rect x="-40" y="-1" width="80" height="2" fill="#00E5FF" opacity="0.8" />
+        <rect x="-35" y="-10" width="4" height="20" rx="1" fill="#00E5FF" opacity="0.6" />
+        <rect x="31" y="-10" width="4" height="20" rx="1" fill="#00E5FF" opacity="0.6" />
       </g>
     );
   } else if (eq === "dumbbell") {
     eqVisual = (
       <g>
-        <rect x="-10" y="-2" width="20" height="4" fill="#94a3b8" />
-        <rect x="-12" y="-8" width="6" height="16" rx="2" fill="#475569" />
-        <rect x="6" y="-8" width="6" height="16" rx="2" fill="#475569" />
+        <rect x="-10" y="-1" width="20" height="2" fill="#00E5FF" opacity="0.8" />
+        <rect x="-12" y="-6" width="4" height="12" rx="1" fill="#00E5FF" opacity="0.6" />
+        <rect x="8" y="-6" width="4" height="12" rx="1" fill="#00E5FF" opacity="0.6" />
       </g>
     );
   } else if (eq === "cable" || eq === "machine") {
-    eqVisual = <circle cx="0" cy="0" r="7" fill="#64748b" />;
+    eqVisual = (
+      <g>
+        <circle cx="0" cy="0" r="4" fill="none" stroke="#00E5FF" strokeWidth="1" />
+        <circle cx="0" cy="0" r="1.5" fill="#00E5FF" />
+      </g>
+    );
   }
 
-  // Environment Prop selection
   let propVisual = null;
+  const propStroke = "rgba(0, 229, 255, 0.2)";
   if (prop === "floor") {
-    propVisual = <line x1="0" y1="105" x2="120" y2="105" stroke="#334155" strokeWidth="4" strokeLinecap="round" />;
+    propVisual = <line x1="-20" y1="105" x2="140" y2="105" stroke={propStroke} strokeWidth="1" strokeDasharray="4 4" />;
   } else if (prop === "bench") {
-    propVisual = <rect x="30" y="80" width="80" height="10" fill="#334155" rx="3" />;
+    propVisual = (
+      <g>
+        <rect x="30" y="80" width="80" height="4" fill="none" stroke={propStroke} strokeWidth="1" />
+        <line x1="40" y1="84" x2="40" y2="105" stroke={propStroke} strokeWidth="1" strokeDasharray="2 2" />
+        <line x1="100" y1="84" x2="100" y2="105" stroke={propStroke} strokeWidth="1" strokeDasharray="2 2" />
+      </g>
+    );
   } else if (prop === "incline_bench") {
     propVisual = (
       <g>
-        <rect x="40" y="55" width="60" height="10" fill="#334155" rx="3" transform="rotate(-30 40 55)" />
-        <rect x="50" y="90" width="40" height="10" fill="#334155" rx="3" />
+        <rect x="40" y="55" width="60" height="4" fill="none" stroke={propStroke} strokeWidth="1" transform="rotate(-30 40 55)" />
+        <rect x="50" y="90" width="40" height="4" fill="none" stroke={propStroke} strokeWidth="1" />
+        <line x1="60" y1="94" x2="60" y2="105" stroke={propStroke} strokeWidth="1" strokeDasharray="2 2" />
       </g>
     );
   } else if (prop === "pullup_bar") {
-    propVisual = <rect x="20" y="10" width="80" height="4" fill="#334155" rx="2" />;
+    propVisual = <rect x="20" y="10" width="80" height="2" fill={propStroke} />;
   }
 
-  // Background offset for 3D depth
-  const bgDx = 10;
-  const bgDy = -3;
+  // Holographic Data Grid Background
+  const gridVisual = (
+    <g opacity="0.1">
+      {[20, 40, 60, 80, 100].map(y => (
+        <line key={`hy-${y}`} x1="0" y1={y} x2="120" y2={y} stroke="#00E5FF" strokeWidth="0.5" />
+      ))}
+      {[20, 40, 60, 80, 100].map(x => (
+        <line key={`hx-${x}`} x1={x} y1="0" x2={x} y2="120" stroke="#00E5FF" strokeWidth="0.5" />
+      ))}
+    </g>
+  );
+
+  // Background offset for 3D depth (smaller for hologram)
+  const bgDx = 6;
+  const bgDy = -2;
+
+  // The main glowing color for the wireframe
+  const holoColor = "#00E5FF";
+  const dimColor = "#0088AA";
 
   return (
     <g>
+      <defs>
+        <filter id="hologlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="2" result="blur" />
+          <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+        <linearGradient id="neonGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#00E5FF" />
+          <stop offset="100%" stopColor="#B300FF" />
+        </linearGradient>
+      </defs>
+
+      {/* Grid Background */}
+      {gridVisual}
+      
       {/* Environment Props */}
       {propVisual}
 
-      {/* Background Dog Limbs (Darker Brown) */}
-      <g strokeLinecap="round" strokeLinejoin="round">
+      {/* Background Hologram Limbs (Dimmer) */}
+      <g strokeLinecap="round" strokeLinejoin="round" filter="url(#hologlow)" opacity="0.5">
         <motion.path
           animate={{ d: animPath("p", "k", "f", bgDx, bgDy) }}
           transition={transitionConfig}
-          stroke="#A67850"
-          strokeWidth="12"
+          stroke={dimColor}
+          strokeWidth="1.5"
           fill="none"
         />
-        <motion.circle
-          animate={{ cx: animCoord("f", 0, bgDx), cy: animCoord("f", 1, bgDy) }}
-          transition={transitionConfig}
-          r="6"
-          fill="#D4A57A"
-        />
+        <motion.circle animate={{ cx: animCoord("k", 0, bgDx), cy: animCoord("k", 1, bgDy) }} transition={transitionConfig} r="2" fill={dimColor} />
+        <motion.circle animate={{ cx: animCoord("f", 0, bgDx), cy: animCoord("f", 1, bgDy) }} transition={transitionConfig} r="2.5" fill={dimColor} />
+
         <motion.path
           animate={{ d: animPath("s", "e", "w", bgDx, bgDy) }}
           transition={transitionConfig}
-          stroke="#A67850"
-          strokeWidth="10"
+          stroke={dimColor}
+          strokeWidth="1.5"
           fill="none"
         />
-        <motion.circle
-          animate={{ cx: animCoord("w", 0, bgDx), cy: animCoord("w", 1, bgDy) }}
-          transition={transitionConfig}
-          r="5"
-          fill="#D4A57A"
-        />
+        <motion.circle animate={{ cx: animCoord("e", 0, bgDx), cy: animCoord("e", 1, bgDy) }} transition={transitionConfig} r="2" fill={dimColor} />
+        <motion.circle animate={{ cx: animCoord("w", 0, bgDx), cy: animCoord("w", 1, bgDy) }} transition={transitionConfig} r="2.5" fill={dimColor} />
       </g>
 
-      {/* Equipment (moves with front wrist) */}
-      <motion.g
-        animate={{ x: animCoord("w", 0), y: animCoord("w", 1) }}
-        transition={transitionConfig}
-      >
-        {eqVisual}
-      </motion.g>
-
-      {/* Foreground Dog Body */}
-      <g strokeLinecap="round" strokeLinejoin="round">
+      {/* Foreground Hologram Body */}
+      <g strokeLinecap="round" strokeLinejoin="round" filter="url(#hologlow)">
+        {/* Wireframe Torso */}
         <motion.line
           animate={{ 
             x1: animCoord("s", 0), y1: animCoord("s", 1), 
             x2: animCoord("p", 0), y2: animCoord("p", 1) 
           }}
           transition={transitionConfig}
-          stroke="#D4A57A"
-          strokeWidth="34"
+          stroke="url(#neonGradient)"
+          strokeWidth="2"
         />
         
-        <motion.g
-          animate={{ 
-            x: animCoord("p", 0), y: animCoord("p", 1),
-            rotate: [-10, 20, 20, -10] 
-          }}
-          transition={transitionConfig}
-        >
-          <path d="M 0 0 Q 15 -10 20 -25" stroke="#C4905A" strokeWidth="7" fill="none" strokeLinecap="round" />
-        </motion.g>
+        {/* Core/Pelvis Node */}
+        <motion.circle animate={{ cx: animCoord("p", 0), cy: animCoord("p", 1) }} transition={transitionConfig} r="3" fill="#B300FF" />
+        {/* Shoulder Node */}
+        <motion.circle animate={{ cx: animCoord("s", 0), cy: animCoord("s", 1) }} transition={transitionConfig} r="3" fill="#00E5FF" />
 
+        {/* FG Leg */}
         <motion.path
           animate={{ d: animPath("p", "k", "f") }}
           transition={transitionConfig}
-          stroke="#C4905A"
-          strokeWidth="12"
+          stroke={holoColor}
+          strokeWidth="2"
           fill="none"
         />
-        <motion.circle
-          animate={{ cx: animCoord("f", 0), cy: animCoord("f", 1) }}
-          transition={transitionConfig}
-          r="6"
-          fill="#E8C49A"
-        />
+        <motion.circle animate={{ cx: animCoord("k", 0), cy: animCoord("k", 1) }} transition={transitionConfig} r="2" fill={holoColor} />
+        <motion.circle animate={{ cx: animCoord("f", 0), cy: animCoord("f", 1) }} transition={transitionConfig} r="2.5" fill={holoColor} />
         
+        {/* FG Arm */}
         <motion.path
           animate={{ d: animPath("s", "e", "w") }}
           transition={transitionConfig}
-          stroke="#C4905A"
-          strokeWidth="10"
+          stroke={holoColor}
+          strokeWidth="2"
           fill="none"
         />
-        <motion.circle
-          animate={{ cx: animCoord("w", 0), cy: animCoord("w", 1) }}
-          transition={transitionConfig}
-          r="5"
-          fill="#E8C49A"
-        />
+        <motion.circle animate={{ cx: animCoord("e", 0), cy: animCoord("e", 1) }} transition={transitionConfig} r="2" fill={holoColor} />
+        <motion.circle animate={{ cx: animCoord("w", 0), cy: animCoord("w", 1) }} transition={transitionConfig} r="2.5" fill={holoColor} />
       </g>
 
-      {/* Head with Dynamic Expression */}
+      {/* Equipment attached to FG Hand (Now Holographic) */}
+      <motion.g
+        animate={{ x: animCoord("w", 0), y: animCoord("w", 1) }}
+        transition={transitionConfig}
+        filter="url(#hologlow)"
+      >
+        {eqVisual}
+      </motion.g>
+
+      {/* Head with Dynamic Expression & Floating AI Aura */}
       <motion.g
         animate={{ x: animCoord("h", 0), y: animCoord("h", 1) }}
         transition={transitionConfig}
       >
+        {/* Holographic scanning ring around head */}
+        <motion.circle 
+          cx="0" cy="0" r="18" 
+          fill="none" stroke="#00E5FF" strokeWidth="0.5" strokeDasharray="4 4"
+          animate={{ rotate: 360, scale: [1, 1.1, 1] }} 
+          transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+        />
+
         <motion.g animate={{ opacity: [1, 0, 0, 1] }} transition={transitionConfig}>
           <YonoHead expression="focused" earAngle={-5} />
         </motion.g>
