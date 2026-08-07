@@ -38,6 +38,38 @@ export function buildCoachMessages(
     });
   }
 
+  if (data.recentSessions && data.recentSessions.length > 0) {
+    const historyStr = data.recentSessions
+      .map((s) => {
+        const date = new Date(s.completedAt).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        });
+        const exStr = s.exercises
+          .map((e) => {
+            if (!e.sets.length) return `  - ${e.exerciseId}: no sets logged`;
+            const setsStr = e.sets
+              .slice(0, 3)
+              .map(
+                (st) =>
+                  `${st.weightKg ?? "BW"}kg x ${st.reps ?? "?"}${
+                    st.rpe != null ? ` (RPE ${st.rpe})` : ""
+                  }`
+              )
+              .join(", ");
+            const total = e.sets.length;
+            return `  - ${e.exerciseId}: ${setsStr}${total > 3 ? ` +${total - 3} more` : ""}`;
+          })
+          .join("\n");
+        return `- ${s.name} (${date}, focus: ${s.focus.join(", ") || "general"}):\n${exStr}`;
+      })
+      .join("\n");
+    messages.push({
+      role: "system",
+      content: `Recent workout history (last ${data.recentSessions.length} completed sessions):\n${historyStr}`,
+    });
+  }
+
   if (data.memories.length > 0) {
     const memoriesStr = data.memories
       .map((m: unknown) => (m as { content: string }).content)

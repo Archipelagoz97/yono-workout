@@ -102,9 +102,41 @@ export default function CoachPage() {
           .equals("completed")
           .reverse()
           .sortBy("completedAt")
-          .then((s) => s.slice(0, 5)),
+          .then((s) => s.slice(0, 8)),
         db.workoutSessions.where("status").equals("active").first(),
       ]);
+
+      // Build a rich history payload: session + exercises + sets
+      const recentSessionsContext = await Promise.all(
+        recentSessions.slice(0, 5).map(async (s) => {
+          const sessionExercises = await db.sessionExercises
+            .where("sessionId")
+            .equals(s.id)
+            .toArray();
+          const exercisesWithSets = await Promise.all(
+            sessionExercises.map(async (ex) => {
+              const sets = await db.workoutSets
+                .where("sessionExerciseId")
+                .equals(ex.id)
+                .toArray();
+              return {
+                exerciseId: ex.exerciseId,
+                sets: sets.map((set) => ({
+                  weightKg: set.weightKg,
+                  reps: set.reps,
+                  rpe: set.rpe,
+                })),
+              };
+            })
+          );
+          return {
+            name: s.name,
+            focus: s.focus,
+            completedAt: s.completedAt ?? s.updatedAt,
+            exercises: exercisesWithSets,
+          };
+        })
+      );
 
       const chatSummaryRecord = await db.chatSummaries.get("main-coach-summary");
 
@@ -122,6 +154,7 @@ export default function CoachPage() {
           : undefined,
         memories: memories ?? [],
         exerciseContext: [],
+        recentSessions: recentSessionsContext,
       };
 
       const controller = new AbortController();

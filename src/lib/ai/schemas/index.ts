@@ -274,6 +274,27 @@ export const CoachRequestSchema = z.object({
     .optional(),
   memories: z.array(z.unknown()),
   exerciseContext: z.array(z.unknown()).optional(),
+  recentSessions: z
+    .array(
+      z.object({
+        name: z.string(),
+        focus: z.array(z.string()),
+        completedAt: z.number(),
+        exercises: z.array(
+          z.object({
+            exerciseId: z.string(),
+            sets: z.array(
+              z.object({
+                weightKg: z.number().optional(),
+                reps: z.number().optional(),
+                rpe: z.number().optional(),
+              })
+            ),
+          })
+        ),
+      })
+    )
+    .optional(),
 });
 
 export const SummarizeChatRequestSchema = z.object({

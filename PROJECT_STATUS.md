@@ -1,6 +1,39 @@
 # Yono Workout — Project Status
 
-## Latest: Scrollable exercise pickers (2026-08-07)
+## Latest: Coach actually sees your workout history (2026-08-07)
+
+User reported Coach Yono couldn't answer "what did I last train" even though it claimed to see
+workout history.
+
+### Root cause
+The coach page fetched the last 5 completed sessions
+(`src/app/coach/page.tsx`) but **never included them in the request body** to
+`/api/ai/coach/stream`, and `CoachRequestSchema` had no field for them either. The system prompt
+told the AI to "use the workout history provided", but none was ever sent — the API received only
+the chat message, chat summary, memories, and an empty `exerciseContext`. So the coach was
+answering from general knowledge with zero ground truth.
+
+### Fix
+- `src/lib/ai/schemas/index.ts`: added optional `recentSessions` to `CoachRequestSchema` —
+  array of `{ name, focus, completedAt, exercises: [{ exerciseId, sets: [{ weightKg, reps, rpe }] }] }`.
+- `src/app/coach/page.tsx`: builds the same rich history payload as the planner (last 5 completed
+  sessions + their exercises + sets with weight/reps/RPE) and sends it as `recentSessions`.
+- `src/lib/ai/buildCoachMessages.ts`: injects a system message
+  `"Recent workout history (last N completed sessions): …"` with readable lines
+  (`- Back + Arms (Aug 5, focus: back, arms): - lat_pulldown: 60kg x 12 (RPE 8), 60kg x 11 (RPE 9) …`).
+- `src/lib/ai/prompts/index.ts`: both coach prompts (JSON + streaming) now tell Yono to treat the
+  history message as ground truth, quote it when asked about past sessions/lifts, and to admit
+  when no records exist yet.
+
+### Checks
+- `npx tsc --noEmit` clean; `npm run build` clean; `npm run lint` 46 problems vs 47 baseline
+  (no regressions).
+- Playwright (prod, chromium, port 3101): intercepted the real `/api/ai/coach/stream` request
+  after seeding 2 completed sessions — request body contains `recentSessions` with both sessions,
+  `Back + Arms` exercises (`lat_pulldown`, `dumbbell_curl`), and `lat_pulldown` sets
+  (`60kg x 12 RPE 8`, `60kg x 11 RPE 9`). **PASS — coach now receives real workout history.**
+
+## Previous: Scrollable exercise pickers (2026-08-07)
 
 Fix for "Select Exercise" / Change-exercise pickers growing past the viewport instead of
 scrolling — the exercise list could not be fully seen.
