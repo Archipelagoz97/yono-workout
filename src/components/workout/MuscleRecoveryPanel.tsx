@@ -7,109 +7,15 @@ import db from "@/db/database";
 import { exercises as exerciseCatalog } from "@/data/exercises.compact";
 import { StatusChip } from "@/components/workout/TodayControls";
 import { formatWeight, type WeightUnit } from "@/lib/units";
+import {
+  RECOVERY_HOURS,
+  DEFAULT_RECOVERY_HOURS,
+  MUSCLE_LABELS,
+  muscleOrder,
+  statusFor,
+} from "@/lib/recovery";
 
 const exerciseMap = new Map(exerciseCatalog.map((e) => [e.id, e]));
-
-// Recovery windows (hours) per muscle group.
-// Large / compound muscles recover slower; smaller ones faster.
-const RECOVERY_HOURS: Record<string, number> = {
-  latissimus_dorsi: 48,
-  rhomboids: 48,
-  trapezius: 48,
-  upper_traps: 48,
-  middle_traps: 48,
-  rear_deltoid: 48,
-  deltoid: 48,
-  lateral_deltoid: 48,
-  front_deltoid: 48,
-  pectoralis_major: 48,
-  upper_pectoralis_major: 48,
-  lower_pectoralis_major: 48,
-  triceps: 24,
-  triceps_long_head: 24,
-  biceps: 24,
-  biceps_brachii: 24,
-  biceps_long_head: 24,
-  brachialis: 24,
-  brachioradialis: 24,
-  quadriceps: 72,
-  hamstrings: 72,
-  glutes: 48,
-  gluteus_medius: 48,
-  adductors: 48,
-  gastrocnemius: 48,
-  soleus: 48,
-  core: 24,
-  rectus_abdominis: 24,
-  obliques: 24,
-  transverse_abdominis: 24,
-  erector_spinae: 48,
-  quadratus_lumborum: 48,
-  hip_flexors: 24,
-  tensor_fasciae_latae: 48,
-  forearms: 24,
-};
-
-const DEFAULT_RECOVERY_HOURS = 48;
-
-// Several muscle IDs map to the same display label (e.g. latissimus_dorsi,
-// rhomboids and middle_traps all become "Back"). We group by label and keep
-// only the least-recovered muscle per group so no label is ever duplicated.
-const MUSCLE_LABELS: Record<string, string> = {
-  latissimus_dorsi: "Back",
-  rhomboids: "Back",
-  trapezius: "Traps",
-  upper_traps: "Traps",
-  middle_traps: "Back",
-  rear_deltoid: "Rear Delt",
-  deltoid: "Shoulders",
-  lateral_deltoid: "Shoulders",
-  front_deltoid: "Shoulders",
-  pectoralis_major: "Chest",
-  upper_pectoralis_major: "Chest",
-  lower_pectoralis_major: "Chest",
-  triceps: "Triceps",
-  triceps_long_head: "Triceps",
-  biceps: "Biceps",
-  biceps_brachii: "Biceps",
-  biceps_long_head: "Biceps",
-  brachialis: "Biceps",
-  brachioradialis: "Forearms",
-  quadriceps: "Quads",
-  hamstrings: "Hamstrings",
-  glutes: "Glutes",
-  gluteus_medius: "Glutes",
-  adductors: "Adductors",
-  gastrocnemius: "Calves",
-  soleus: "Calves",
-  core: "Core",
-  rectus_abdominis: "Core",
-  obliques: "Core",
-  transverse_abdominis: "Core",
-  erector_spinae: "Lower back",
-  quadratus_lumborum: "Lower back",
-  hip_flexors: "Hip flexors",
-  tensor_fasciae_latae: "Glutes",
-  forearms: "Forearms",
-};
-
-const muscleOrder = [
-  "quadriceps",
-  "hamstrings",
-  "glutes",
-  "adductors",
-  "gastrocnemius",
-  "soleus",
-  "pectoralis_major",
-  "latissimus_dorsi",
-  "rhomboids",
-  "deltoid",
-  "rear_deltoid",
-  "biceps",
-  "triceps",
-  "erector_spinae",
-  "core",
-];
 
 function formatAgo(hours: number): string {
   if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m ago`;
@@ -131,12 +37,6 @@ function formatReadyAt(fromTs: number, remainingHours: number): string {
     day: "numeric",
   });
   return `${date} (${diffDays} days)`;
-}
-
-function statusFor(hours: number, target: number): "fresh" | "recovering" | "recent" {
-  if (hours >= target) return "fresh";
-  if (hours < 24) return "recent";
-  return "recovering";
 }
 
 // The most recent logged workout that trained a muscle, for the auto "why".

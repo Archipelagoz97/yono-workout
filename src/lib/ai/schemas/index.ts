@@ -218,6 +218,15 @@ export const SuggestWorkoutRequestSchema = z.object({
       ),
     })
   ),
+  muscleRecovery: z
+    .array(
+      z.object({
+        label: z.string(),
+        pct: z.number().min(0).max(100),
+        status: z.enum(["fresh", "recovering", "recent"]),
+      })
+    )
+    .optional(),
   preferences: z.array(z.unknown()),
   notes: z.array(z.unknown()),
   memories: z.array(z.unknown()),

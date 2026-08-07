@@ -3,6 +3,7 @@
 // This is not AI — it runs locally and offline.
 
 import type { WorkoutSet } from "@/types";
+import { MUSCLE_LABELS } from "@/lib/recovery";
 
 export interface ProgressionAdvice {
   action: "increase_weight" | "maintain_weight" | "decrease_weight" | "no_history";
@@ -167,7 +168,8 @@ export function getFallbackExercises(
     primaryMuscles: string[];
   }>,
   exerciseHistory: Map<string, { lastWeightKg?: number; lastReps?: number }>,
-  targetCount = 4
+  targetCount = 4,
+  recoveringLabels?: Set<string>
 ) {
   const equipmentSet = new Set(availableEquipmentCodes);
 
@@ -186,6 +188,7 @@ export function getFallbackExercises(
     "cardio": ["Cardio"],
     "core": ["Core"],
     "glutes": ["Glutes"],
+    "recovery": ["Core", "Shoulders", "Calves"],
   };
 
   const targetCategories = new Set<string>();
@@ -202,12 +205,24 @@ export function getFallbackExercises(
   }
 
   // Filter exercises by equipment and focus
-  const eligible = allExercises.filter(
+  let eligible = allExercises.filter(
     (e) =>
       targetCategories.has(e.category) &&
       e.equipmentCodes.some((code) => equipmentSet.has(code)) &&
       e.difficulty !== "advanced"
   );
+
+  // Recovery-aware: drop exercises whose primary muscles are still recovering.
+  // If that empties the pool, fall back to the full eligible list rather than
+  // returning nothing.
+  if (recoveringLabels && recoveringLabels.size > 0) {
+    const rested = eligible.filter((e) =>
+      e.primaryMuscles.every(
+        (m) => !recoveringLabels.has(MUSCLE_LABELS[m] ?? m)
+      )
+    );
+    if (rested.length > 0) eligible = rested;
+  }
 
   // Sort: prefer exercises with history (familiar), then by category
   const categoriesList = [...targetCategories];

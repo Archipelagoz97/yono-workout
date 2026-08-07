@@ -50,6 +50,30 @@ export async function POST(req: NextRequest) {
       })
       .join("\n") || "None";
 
+    const recoveryStr = context.muscleRecovery?.length
+      ? context.muscleRecovery
+          .map((r) => `- ${r.label}: ${r.pct}% recovered (${r.status})`)
+          .join("\n")
+      : "No training history yet";
+
+    // Map exerciseId -> most recent working weight from real logged sets.
+    // Used to clamp the AI's suggested weights so they stay close to reality.
+    const lastWeightByExercise = new Map<string, number>();
+    for (const h of context.relevantExerciseHistory) {
+      const recent = h.recentPerformances
+        .filter((p) => p.sets.some((s) => s.weightKg != null && s.reps != null))
+        .sort((a, b) => b.completedAt - a.completedAt);
+      for (const perf of recent) {
+        const last = [...perf.sets]
+          .reverse()
+          .find((s) => s.weightKg != null);
+        if (last?.weightKg != null) {
+          lastWeightByExercise.set(h.exerciseId, last.weightKg);
+          break;
+        }
+      }
+    }
+
     const availableExerciseIds = context.gym.availableEquipmentCodes
       ? exercises
           .filter((e) =>
@@ -81,6 +105,9 @@ export async function POST(req: NextRequest) {
       "",
       "Exercise history for relevant exercises:",
       exerciseHistoryStr,
+      "",
+      "Muscle recovery (last X hours):",
+      recoveryStr,
       "",
       "Exercise preferences:",
       preferencesStr,
@@ -125,6 +152,18 @@ export async function POST(req: NextRequest) {
         ex.targetRepMin > ex.targetRepMax
       ) {
         ex.targetRepMin = ex.targetRepMax - 2;
+      }
+    }
+
+    // Clamp suggested weights to reality: set from last logged weight if missing,
+    // and never invent a weight more than ~5% above the user's last real weight.
+    for (const ex of suggestion.exercises) {
+      const lastWeight = lastWeightByExercise.get(ex.exerciseId);
+      if (lastWeight == null) continue;
+      if (ex.suggestedWeightKg == null) {
+        ex.suggestedWeightKg = lastWeight;
+      } else if (ex.suggestedWeightKg > lastWeight * 1.05) {
+        ex.suggestedWeightKg = Math.round(Math.max(lastWeight, lastWeight * 1.05) * 4) / 4;
       }
     }
 

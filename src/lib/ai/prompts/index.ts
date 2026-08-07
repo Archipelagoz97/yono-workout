@@ -16,6 +16,8 @@ RULES:
 - Do not increase weight, sets, AND reps simultaneously.
 - **CRITICAL**: The user lives in Indonesia. ALL weights MUST be in Kilograms (KG). Never use LBs.
 - **CRITICAL**: Use the user's history of previous sessions and existing memories to determine realistic target weights and reps.
+- **WEIGHTS MUST MATCH REAL DATA**: When the user has logged an exercise before, its suggestedWeightKg must be close to their last actual logged weight. Never invent a weight wildly above what they have achieved. Prefer the last logged weight; increase at most ~2.5 kg if their last sets were strong.
+- **RECOVERY**: A "Muscle recovery" section lists how recently each muscle group was trained and its recovery percentage. NEVER select exercises that primarily target a muscle group below 60% recovery. Instead choose a different exercise for a different, recovered muscle group while honoring the user's focus as much as possible. If the requested focus only maps to recovering muscles, tell them in the "reason" field and pick the least-recently-trained muscles.
 - Explain your suggestion in 1-2 short sentences in the "reason" field.
 - Return ONLY valid JSON matching the schema. No markdown, no explanation outside JSON.
 

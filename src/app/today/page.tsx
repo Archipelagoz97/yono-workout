@@ -35,6 +35,7 @@ import { getSelectedGymId, getWorkoutPrefs, saveWorkoutPrefs } from "@/lib/stora
 import { getTemplates, deleteTemplate, type WorkoutTemplate } from "@/lib/templates";
 import { exercises } from "@/data/exercises.compact";
 import { getFallbackExercises } from "@/lib/progression";
+import { getMuscleRecoveryRows, getRecoveringLabels } from "@/lib/recovery";
 import { kgToDisplay, type WeightUnit } from "@/lib/units";
 import type { WorkoutSession } from "@/types";
 import type { BulkImportLogResult } from "@/lib/ai/schemas";
@@ -59,6 +60,58 @@ const FOCUS_SPECIFIC = [
 ];
 
 const ALL_FOCUS = [...FOCUS_OPTIONS, ...FOCUS_SPECIFIC];
+
+// Fetch the last ~3 training performances (one per session) for an exercise,
+// with their working-set weights & reps. Used to ground AI/offline weights.
+async function fetchExerciseHistory(exerciseId: string) {
+  const sets = await db.workoutSets
+    .where("exerciseId")
+    .equals(exerciseId)
+    .toArray();
+
+  const bySession = new Map<string, { completedAt: number; sets: Array<{ weightKg?: number; reps?: number }> }>();
+  for (const s of sets) {
+    if (s.setType === "warmup") continue;
+    const entry = bySession.get(s.sessionId) ?? { completedAt: s.completedAt ?? 0, sets: [] };
+    entry.sets.push({ weightKg: s.weightKg, reps: s.reps });
+    if ((s.completedAt ?? 0) > entry.completedAt) entry.completedAt = s.completedAt ?? 0;
+    bySession.set(s.sessionId, entry);
+  }
+
+  return {
+    exerciseId,
+    recentPerformances: Array.from(bySession.values())
+      .sort((a, b) => b.completedAt - a.completedAt)
+      .slice(0, 3),
+  };
+}
+
+// Last real weight logged per exercise, keyed by exerciseId -> { lastWeightKg, lastReps }.
+// Used by the offline fallback so it recommends weights the user can actually do.
+async function buildExerciseHistoryMap() {
+  const sets = await db.workoutSets.toArray();
+  const history = new Map<
+    string,
+    { lastWeightKg?: number; lastReps?: number; lastTs: number }
+  >();
+  for (const s of sets) {
+    if (s.setType === "warmup" || s.weightKg == null) continue;
+    const cur = history.get(s.exerciseId);
+    const ts = s.completedAt ?? 0;
+    if (!cur || ts >= cur.lastTs) {
+      history.set(s.exerciseId, {
+        lastWeightKg: s.weightKg,
+        lastReps: s.reps,
+        lastTs: ts,
+      });
+    }
+  }
+  const out = new Map<string, { lastWeightKg?: number; lastReps?: number }>();
+  for (const [id, h] of history) {
+    out.set(id, { lastWeightKg: h.lastWeightKg, lastReps: h.lastReps });
+  }
+  return out;
+}
 
 const TIME_OPTIONS = [
   { id: "20", label: "20m" },
@@ -347,6 +400,21 @@ export default function TodayPage() {
 
       const profile = await db.profiles.get("main-user");
 
+      // Real per-exercise history + recovery status, sent to the AI so its
+      // suggested weights match what the user can do and it avoids tired muscles.
+      const allSets = await db.workoutSets.toArray();
+      // eslint-disable-next-line react-hooks/purity -- event handler, safe to read current time
+      const muscleRecovery = getMuscleRecoveryRows(allSets, Date.now()).map(
+        ({ label, pct, status }) => ({ label, pct, status })
+      );
+      const relevantExerciseHistory = await Promise.all(
+        recentSessionsContext
+          .flatMap((s) => s.exercises.map((e) => e.exerciseId))
+          .filter((id, i, arr) => arr.indexOf(id) === i)
+          .slice(0, 8)
+          .map(fetchExerciseHistory)
+      );
+
       const focusMap: Record<string, string[]> = {
         choose: ["full_body"],
         upper_body: ["upper body"],
@@ -386,7 +454,8 @@ export default function TodayPage() {
             ) ?? [],
         },
         recentSessions: recentSessionsContext,
-        relevantExerciseHistory: [],
+        relevantExerciseHistory,
+        muscleRecovery,
         preferences,
         notes: [],
         memories,
@@ -434,14 +503,23 @@ export default function TodayPage() {
       lower_body: ["lower body"],
       back: ["back"],
       chest: ["chest"],
+      shoulders: ["shoulders"],
       arms: ["arms"],
       back_arms: ["back", "arms"],
+      chest_shoulders: ["chest", "shoulders"],
       legs: ["legs"],
       cardio: ["cardio"],
+      recovery: ["recovery"],
     };
 
     const focus = focusMap[selectedFocus ?? "choose"] ?? ["full body"];
-    const exerciseHistory = new Map<string, { lastWeightKg?: number }>();
+    // Real weights from logged history instead of empty, so fallback suggests
+    // weights the user has actually handled.
+    const exerciseHistory = await buildExerciseHistoryMap();
+
+    // Skip muscle groups still recovering (< 60%) so we don't hammer tired muscles.
+    const allSets = await db.workoutSets.toArray();
+    const recoveringLabels = getRecoveringLabels(getMuscleRecoveryRows(allSets, Date.now()));
 
     const count =
       selectedTime === "20" ? 3 : selectedTime === "60" ? 6 : 4;
@@ -451,7 +529,8 @@ export default function TodayPage() {
       availableCodes,
       exercises,
       exerciseHistory,
-      count
+      count,
+      recoveringLabels
     );
 
     const offlineSuggestion = {
