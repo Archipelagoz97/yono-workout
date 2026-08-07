@@ -14,7 +14,6 @@ import type {
   ChatSummary,
   BackupMetadata,
   AchievementUnlock,
-  RecoveryNote,
 } from "@/types";
 // ─────────────────────────────────────────────────────────
 // YonoWorkoutDB — Local-first IndexedDB via Dexie
@@ -37,7 +36,6 @@ export const db = new Dexie("YonoWorkoutDB") as Dexie & {
   chatSummaries: EntityTable<ChatSummary, "id">;
   backupMetadata: EntityTable<BackupMetadata, "id">;
   achievementUnlocks: EntityTable<AchievementUnlock, "code">;
-  recoveryNotes: EntityTable<RecoveryNote, "id">;
 };
 
 db.version(1).stores({
@@ -61,10 +59,6 @@ db.version(1).stores({
 
 db.version(2).stores({
   achievementUnlocks: "code, earnedAt",
-});
-
-db.version(3).stores({
-  recoveryNotes: "id, updatedAt",
 });
 
 // ─────────────────────────────────────────────────────────

@@ -6,10 +6,7 @@ import { HeartPulseIcon } from "lucide-react";
 import db from "@/db/database";
 import { exercises as exerciseCatalog } from "@/data/exercises.compact";
 import { StatusChip } from "@/components/workout/TodayControls";
-import { Button } from "@/components/ui/button";
-import {
-  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
-} from "@/components/ui/sheet";
+import { formatWeight, type WeightUnit } from "@/lib/units";
 
 const exerciseMap = new Map(exerciseCatalog.map((e) => [e.id, e]));
 
@@ -122,8 +119,6 @@ function formatAgo(hours: number): string {
 
 function formatReadyAt(fromTs: number, remainingHours: number): string {
   const ready = new Date(fromTs + remainingHours * 3600000);
-  const now = new Date();
-  const sameDay = ready.toDateString() === now.toDateString();
   const time = ready.toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
@@ -135,7 +130,7 @@ function formatReadyAt(fromTs: number, remainingHours: number): string {
     month: "short",
     day: "numeric",
   });
-  return sameDay ? `~${time} today` : `${date}${diffDays > 1 ? ` (${diffDays} days)` : ""}`;
+  return `${date} (${diffDays} days)`;
 }
 
 function statusFor(hours: number, target: number): "fresh" | "recovering" | "recent" {
@@ -144,35 +139,68 @@ function statusFor(hours: number, target: number): "fresh" | "recovering" | "rec
   return "recovering";
 }
 
+// The most recent logged workout that trained a muscle, for the auto "why".
+interface TrainedBout {
+  exerciseId: string;
+  exerciseName: string;
+  lastTs: number;
+  workingSets: number;
+  lastReps?: number;
+  lastWeightKg?: number;
+}
+
 export function MuscleRecoveryPanel() {
   const sets = useLiveQuery(() => db.workoutSets.toArray(), []);
+  const profile = useLiveQuery(() => db.profiles.get("main-user"), []);
   const [now] = useState(() => Date.now());
-  const [editMuscle, setEditMuscle] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
 
-  const noteRow = useLiveQuery(() => db.recoveryNotes.get("main-recovery-note"), []);
-  const reasons = noteRow?.reasons ?? {};
+  const weightUnit: WeightUnit = profile?.preferredWeightUnit ?? "kg";
 
   const recovery = useMemo(() => {
     if (!sets) return null;
     const lastTrained = new Map<string, number>();
+    const lastBout = new Map<string, TrainedBout>();
+    const boutSets = new Map<string, { count: number; reps?: number; weightKg?: number }>();
+
     for (const s of sets) {
       const def = exerciseMap.get(s.exerciseId);
       if (!def) continue;
       const ts = s.completedAt ?? 0;
       for (const muscle of def.primaryMuscles) {
         const cur = lastTrained.get(muscle) ?? 0;
-        if (ts > cur) lastTrained.set(muscle, ts);
+        if (ts > cur) {
+          lastTrained.set(muscle, ts);
+          lastBout.set(muscle, {
+            exerciseId: s.exerciseId,
+            exerciseName: def.name,
+            lastTs: ts,
+            workingSets: 0,
+          });
+        }
+        // Accumulate working-set summary for the most recent bout of this muscle.
+        const bout = lastBout.get(muscle);
+        if (bout && bout.lastTs === ts) {
+          const agg = boutSets.get(muscle) ?? { count: 0 };
+          if (s.setType !== "warmup") {
+            agg.count += 1;
+            if (s.reps != null) agg.reps = s.reps;
+            if (s.weightKg != null) agg.weightKg = s.weightKg;
+          }
+          boutSets.set(muscle, agg);
+          bout.workingSets = agg.count;
+          bout.lastReps = agg.reps;
+          bout.lastWeightKg = agg.weightKg;
+        }
       }
     }
-    return lastTrained;
+    return { lastTrained, lastBout };
   }, [sets]);
 
   const muscleData = useMemo(() => {
     if (!recovery) return null;
     const byLabel = new Map<string, { muscle: string; lastTrained: number; hours: number }>();
     for (const muscle of muscleOrder) {
-      const ts = recovery.get(muscle);
+      const ts = recovery.lastTrained.get(muscle);
       if (!ts) continue;
       const label = MUSCLE_LABELS[muscle] ?? muscle.replace(/_/g, " ");
       const elapsed = Math.max(0, (now - ts) / 3600000);
@@ -202,30 +230,6 @@ export function MuscleRecoveryPanel() {
     return hours >= target;
   }).length;
 
-  const openEditor = (muscle: string) => {
-    setEditMuscle(muscle);
-    setDraft(reasons[muscle] ?? "");
-  };
-
-  const saveNote = async () => {
-    if (!editMuscle) return;
-    const next = { ...reasons };
-    if (draft.trim()) next[editMuscle] = draft.trim();
-    else delete next[editMuscle];
-    await db.recoveryNotes.put({
-      id: "main-recovery-note",
-      reasons: next,
-      updatedAt: Date.now(),
-    });
-    setEditMuscle(null);
-  };
-
-  const editLabel = editMuscle ? (MUSCLE_LABELS[editMuscle] ?? editMuscle.replace(/_/g, " ")) : "";
-  const editTarget = editMuscle ? (RECOVERY_HOURS[editMuscle] ?? DEFAULT_RECOVERY_HOURS) : 0;
-  const editTs = editMuscle ? (recovery.get(editMuscle) ?? now) : now;
-  const editHours = editMuscle ? Math.max(0, (now - editTs) / 3600000) : 0;
-  const editStatus = editMuscle ? statusFor(editHours, editTarget) : "fresh";
-
   return (
     <div className="px-4 mb-6 relative z-10">
       <div className="flex items-center justify-between mb-2.5">
@@ -244,90 +248,64 @@ export function MuscleRecoveryPanel() {
           const target = RECOVERY_HOURS[muscle] ?? DEFAULT_RECOVERY_HOURS;
           const status = statusFor(hours, target);
           const pct = Math.min(100, Math.round((hours / target) * 100));
-          const reason = reasons[muscle];
-          const lastTrained = recovery.get(muscle) ?? 0;
+          const bout = recovery.lastBout.get(muscle);
+          const lastTrained = recovery.lastTrained.get(muscle) ?? 0;
+
+          let reason = "";
+          if (bout) {
+            const parts: string[] = [bout.exerciseName];
+            if (bout.workingSets > 0) {
+              const setStr = `${bout.workingSets}×${bout.lastReps ?? "?"}`;
+              const weightStr =
+                bout.lastWeightKg != null
+                  ? formatWeight(bout.lastWeightKg, weightUnit)
+                  : null;
+              parts.push(weightStr ? `${setStr} @ ${weightStr}` : setStr);
+            }
+            parts.push(formatAgo(hours));
+            reason = `Recovering from ${parts.join(" · ")}`;
+          }
+
           return (
-            <button
+            <div
               key={muscle}
-              onClick={() => openEditor(muscle)}
-              className="w-full text-left flex items-center justify-between gap-2 py-3 border-b border-border/60 last:border-0 group"
+              className="py-3 border-b border-border/60 last:border-0"
             >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  <p className="text-sm font-semibold text-foreground truncate">{label}</p>
-                  <span className="text-[11px] font-bold text-muted-foreground tabular-nums">
-                    {pct}%
-                  </span>
-                </div>
-                <div className="mt-1 h-1.5 w-full max-w-[160px] rounded-full bg-muted overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-orange-400 to-secondary transition-all"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-1 truncate">
-                  {status === "fresh" ? (
-                    "Ready"
-                  ) : (
-                    <>
-                      {formatReadyAt(lastTrained, target - hours)} · {formatAgo(hours)}
-                    </>
-                  )}
-                </p>
-                {reason && (
-                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate italic">
-                    “{reason}”
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-semibold text-foreground truncate">{label}</p>
+                    <span className="text-[11px] font-bold text-muted-foreground tabular-nums">
+                      {pct}%
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 w-full max-w-[160px] rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-orange-400 to-secondary transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-1 truncate">
+                    {status === "fresh"
+                      ? "Ready to train"
+                      : `Will be ready ${formatReadyAt(lastTrained, target - hours)}`}
                   </p>
-                )}
+                  {reason && (
+                    <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                      {reason}
+                    </p>
+                  )}
+                </div>
+                <StatusChip status={status} className="shrink-0" />
               </div>
-              <StatusChip status={status} className="shrink-0" />
-            </button>
+            </div>
           );
         })}
       </div>
 
       <p className="text-[10px] text-muted-foreground mt-2">
-        Percentages are estimates from recent logged workouts. Tap a muscle to add a note.
+        Percentages and reasons are estimates from your recent logged workouts.
       </p>
-
-      {/* Editor sheet */}
-      <Sheet open={!!editMuscle} onOpenChange={(open) => !open && setEditMuscle(null)}>
-        <SheetContent side="bottom" className="rounded-t-3xl pb-6">
-          <SheetHeader className="pb-2">
-            <SheetTitle>
-              {editLabel}
-              <span className="ml-2 text-xs font-medium text-muted-foreground capitalize">
-                {editStatus}
-              </span>
-            </SheetTitle>
-            <SheetDescription>
-              {editStatus === "fresh"
-                ? "This muscle group is ready to train."
-                : `Will be ready ${formatReadyAt(editTs, editTarget - editHours)}. Add a note to remember why it’s still recovering.`}
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="px-4 space-y-4">
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Why is this still recovering? e.g. sore from yesterday, injury flare-up, long session..."
-              rows={3}
-              className="w-full rounded-xl border border-border bg-muted/50 p-3 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-            <div className="flex gap-2">
-              {draft.trim() && (
-                <Button variant="ghost" className="flex-1 text-muted-foreground" onClick={() => setDraft("")}>
-                  Clear
-                </Button>
-              )}
-              <Button className="flex-1" onClick={saveNote} disabled={!draft.trim()}>
-                Save note
-              </Button>
-            </div>
-          </div>
-        </SheetContent>
-      </Sheet>
     </div>
   );
 }

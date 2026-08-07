@@ -137,13 +137,6 @@ export interface ExerciseNote {
   updatedAt: number;
 }
 
-export interface RecoveryNote {
-  id: "main-recovery-note";
-  // Map of muscle id -> reason why it's still recovering
-  reasons: Record<string, string>;
-  updatedAt: number;
-}
-
 export interface AiMemory {
   id: string;
   category:
