@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { BottomNav } from "@/components/layout/BottomNav";
+import { PageTransition } from "@/components/layout/PageTransition";
 import { DbProvider } from "@/components/providers/DbProvider";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { OnboardingProvider } from "@/components/onboarding/OnboardingProvider";
@@ -82,7 +83,7 @@ export default function RootLayout({
               {/* Main content */}
               <main className="w-full min-w-0 max-w-full overflow-x-clip flex-1 lg:ml-64">
                 <div className="w-full min-w-0 min-h-dvh max-w-2xl mx-auto lg:max-w-3xl">
-                  {children}
+                  <PageTransition>{children}</PageTransition>
                 </div>
               </main>
             </div>
