@@ -1,6 +1,36 @@
 # Yono Workout — Project Status
 
-## Latest: Change-exercise sheet, start transition, set toast + undo (2026-08-07)
+## Latest: Scrollable exercise pickers (2026-08-07)
+
+Fix for "Select Exercise" / Change-exercise pickers growing past the viewport instead of
+scrolling — the exercise list could not be fully seen.
+
+### Root cause
+`@base-ui/react/scroll-area` viewport is `size-full` (height:100%), which resolves against the
+parent's *specified* height. In the bottom sheet (`ChangeExerciseSheet`) and centered dialog
+(`ExerciseSelectorDialog`) the wrapper only had `max-height`, so `height:100%` fell back to the
+un-clamped content height — the viewport grew to the full catalog height and got clipped by the
+container's `overflow-hidden` instead of scrolling.
+
+### Fix
+- `src/components/ui/scroll-area.tsx`: Root is now `flex flex-col` and the viewport uses
+  `w-full flex-1 min-h-0` instead of `size-full`. Flexbox resolves the viewport height against
+  the constrained root regardless of the parent's height mode, so the list scrolls inside the
+  sheet/dialog.
+- `src/components/workout/ChangeExerciseSheet.tsx`: ScrollArea is `flex-1 min-h-0` inside the
+  `max-h-[85dvh]` sheet (was `max-h-[55dvh]`, which did not flex-fill).
+- `src/components/workout/ExerciseSelectorDialog.tsx`: ScrollArea is `flex-1 min-h-0` (was
+  missing `min-h-0`, so the flex item's `min-height:auto` blocked shrinking).
+- `src/app/history/page.tsx`: same `min-h-0` for the session-detail ScrollArea.
+
+### Checks
+- `npx tsc --noEmit` clean; `npm run build` clean; `npm run lint` unchanged at 47-problem baseline.
+- Playwright (prod, chromium, port 3101): Change sheet scrolls (99 search results,
+  clientHeight 466 vs scrollHeight 7928, scrollTop changes); **Select Exercise dialog** list
+  scrolls (clientHeight 587 vs scrollHeight 8888) and the dialog fits the viewport; responsive
+  320/430 sheet/search/overlay/toast **ALL PASS**; undo script 5/5.
+
+## Previous: Change-exercise sheet, start transition, set toast + undo (2026-08-07)
 
 Three UX improvements verified end-to-end on the production build.
 

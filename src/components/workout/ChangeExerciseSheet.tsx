@@ -111,7 +111,7 @@ export function ChangeExerciseSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="rounded-t-3xl pb-6">
+      <SheetContent side="bottom" className="rounded-t-3xl pb-6 max-h-[85dvh] overflow-hidden">
         <SheetHeader className="pb-2">
           <SheetTitle>Change exercise</SheetTitle>
           <SheetDescription>
@@ -134,7 +134,7 @@ export function ChangeExerciseSheet({
           </div>
         </div>
 
-        <ScrollArea className="max-h-[50dvh] -mx-4 px-4">
+        <ScrollArea className="min-h-0 flex-1 -mx-4 px-4">
           <div className="space-y-2 pb-4">
             {!q && (
               <>
