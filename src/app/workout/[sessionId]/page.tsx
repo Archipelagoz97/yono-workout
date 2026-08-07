@@ -120,6 +120,28 @@ export default function WorkoutPage() {
   const [templateName, setTemplateName] = useState("");
   const [templateSaved, setTemplateSaved] = useState(false);
 
+  // Compact "Logged" toast with a real Undo action.
+  const [setToast, setSetToast] = useState<{
+    id: string;
+    message: string;
+  } | null>(null);
+  const setToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showSetToast = (id: string, message: string) => {
+    if (setToastTimerRef.current) clearTimeout(setToastTimerRef.current);
+    setSetToast({ id, message });
+    setToastTimerRef.current = setTimeout(() => {
+      setSetToast(null);
+      setToastTimerRef.current = null;
+    }, 5000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (setToastTimerRef.current) clearTimeout(setToastTimerRef.current);
+    };
+  }, []);
+
   // Rest timer
   const [restActive, setRestActive] = useState(false);
   const [restRemaining, setRestRemaining] = useState(0);
@@ -471,22 +493,24 @@ export default function WorkoutPage() {
         },
       ]);
 
-      // Build feedback message with the actual set details.
+      // Show the compact "Logged" toast only after the DB write confirms.
       const setLabel = setType === "warmup" ? `Warmup ${setNumber}` : `Set ${setNumber}`;
-      let detail: string;
+      let toastDetail: string;
       if (hasWeightInput && weight > 0) {
-        detail = `${formatWeight(setRecord.weightKg ?? setRecord.assistanceWeightKg ?? 0, weightUnit)} × ${setRecord.reps ?? "—"} reps`;
+        toastDetail = `${formatWeight(setRecord.weightKg ?? setRecord.assistanceWeightKg ?? 0, weightUnit)} × ${setRecord.reps ?? "—"} reps`;
       } else if (hasDurationInput && durationSeconds > 0) {
-        detail = `${Math.floor(durationSeconds / 60)}:${(durationSeconds % 60).toString().padStart(2, "0")}`;
+        toastDetail = `${durationSeconds} sec`;
       } else if (hasDistanceInput && distanceMeters > 0) {
-        detail = `${distanceMeters} m`;
+        toastDetail = `${distanceMeters} m`;
       } else if (setRecord.reps) {
-        detail = `${setRecord.reps} reps`;
+        toastDetail = `${setRecord.reps} reps`;
       } else {
-        detail = "saved";
+        toastDetail = "saved";
       }
+      showSetToast(setRecord.id, `${setLabel} ditambah · ${toastDetail} · Logged`);
+
       const flavor = getRandomCopy("set_complete", true);
-      setSavedCopy(`${setLabel} ditambah · ${detail} · ${flavor ?? "Yono approves."}`);
+      setSavedCopy(flavor ?? "Yono approves.");
       setYonoState("set_complete");
       // Advance set number / exercise
       const isWarmupSet = setType === "warmup";
@@ -568,22 +592,56 @@ export default function WorkoutPage() {
     sessionExercises,
   ]);
 
-  const handleUndoLastSet = async () => {
-    if (undoStack.length === 0) return;
-    const last = undoStack[undoStack.length - 1];
-    const setToDelete = await db.workoutSets.get(last.id).catch(() => undefined);
-    if (setToDelete) {
-      await db.workoutSets.delete(last.id);
+  const handleUndoSet = async (id: string): Promise<boolean> => {
+    const entry = undoStack.find((u) => u.id === id);
+    if (!entry) return false;
+    const setToDelete = await db.workoutSets.get(entry.id).catch(() => undefined);
+    if (!setToDelete) {
+      return false;
     }
+    await db.workoutSets.delete(entry.id);
     // Stop rest timer
     setRestActive(false);
     setRestRemaining(0);
     // Revert position (works whether or not auto-advance fired)
     clearAdvanceTimer();
-    goToExercise(last.exerciseIndex);
-    setSetNumber(last.setNumber);
-    setUndoStack((prev) => prev.slice(0, -1));
-    setSavedCopy("Set removed.");
+    goToExercise(entry.exerciseIndex);
+    setSetNumber(entry.setNumber);
+    // Restore the inputs from the undone set
+    if (setToDelete.weightKg != null) {
+      setWeight(Math.round(kgToDisplay(setToDelete.weightKg, weightUnit) * 100) / 100);
+    }
+    if (setToDelete.reps != null) setReps(setToDelete.reps);
+    if (setToDelete.durationSeconds != null) setDurationSeconds(setToDelete.durationSeconds);
+    if (setToDelete.distanceMeters != null) setDistanceMeters(setToDelete.distanceMeters);
+    if (setToDelete.setType === "warmup") setSetType("warmup");
+    else setSetType("working");
+    setUndoStack((prev) => prev.filter((u) => u.id !== id));
+    return true;
+  };
+
+  const handleUndoLastSet = async () => {
+    if (undoStack.length === 0) return;
+    const last = undoStack[undoStack.length - 1];
+    const ok = await handleUndoSet(last.id);
+    if (ok) {
+      setSavedCopy("Set dibatalkan.");
+    } else {
+      setSavedCopy("Couldn't undo set.");
+    }
+    setYonoState("idle");
+  };
+
+  const handleToastUndo = async () => {
+    if (!setToast) return;
+    if (setToastTimerRef.current) clearTimeout(setToastTimerRef.current);
+    setSetToast(null);
+    const ok = await handleUndoSet(setToast.id);
+    if (ok) {
+      setSavedCopy("Set dibatalkan.");
+    } else {
+      setSavedCopy("Couldn't undo set.");
+    }
     setYonoState("idle");
   };
 
@@ -1447,6 +1505,41 @@ export default function WorkoutPage() {
           }
         }}
       />
+
+      {/* Compact "Logged" toast with Undo */}
+      <AnimatePresence>
+        {setToast && (
+          <motion.div
+            key={setToast.id}
+            role="status"
+            aria-live="polite"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.2 }}
+            className="fixed left-1/2 z-[60] w-[calc(100%-2rem)] max-w-md -translate-x-1/2"
+            style={{
+              bottom: "calc(64px + env(safe-area-inset-bottom, 0px) + 16px)",
+            }}
+          >
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-card/95 px-4 py-3 shadow-lg backdrop-blur-md">
+              <p className="min-w-0 flex-1 text-sm font-medium text-foreground truncate">
+                {setToast.message}
+              </p>
+              <Button
+                id="btn-undo-set-toast"
+                variant="outline"
+                size="sm"
+                onClick={handleToastUndo}
+                className="shrink-0 h-9 px-3 text-xs font-semibold"
+              >
+                <Undo2Icon className="w-3.5 h-3.5 mr-1" />
+                Undo
+              </Button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

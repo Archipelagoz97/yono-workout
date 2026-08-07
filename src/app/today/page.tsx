@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import {
   SparklesIcon, DumbbellIcon, FootprintsIcon, PersonStandingIcon, LayersIcon,
@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { YonoAnimation } from "@/components/yono/YonoAnimation";
 import { ExerciseDetailsDialog } from "@/components/workout/ExerciseDetailsDialog";
 import { ExerciseSelectorDialog } from "@/components/workout/ExerciseSelectorDialog";
+import { ChangeExerciseSheet } from "@/components/workout/ChangeExerciseSheet";
 import { MuscleRecoveryPanel } from "@/components/workout/MuscleRecoveryPanel";
 import {
   SectionHeader,
@@ -28,6 +29,7 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
 } from "@/components/ui/sheet";
 import db from "@/db/database";
+import Dexie from "dexie";
 import { useLiveQuery } from "dexie-react-hooks";
 import { getSelectedGymId, getWorkoutPrefs, saveWorkoutPrefs } from "@/lib/storage";
 import { getTemplates, deleteTemplate, type WorkoutTemplate } from "@/lib/templates";
@@ -176,6 +178,25 @@ export default function TodayPage() {
   const [showReversePrompt, setShowReversePrompt] = useState(false);
   const [promptCopied, setPromptCopied] = useState(false);
   const [showMoreSheet, setShowMoreSheet] = useState(false);
+  const [startingSession, setStartingSession] = useState(false);
+  const startingRef = useRef(false);
+  const reduceMotion = useReducedMotion();
+
+  // Short Yono loading transition before entering a workout.
+  const startSessionWithTransition = async (sessionId: string) => {
+    if (startingRef.current) return;
+    startingRef.current = true;
+    setStartingSession(true);
+    const minDelay = 900;
+    const startedAt = Date.now();
+    await new Promise((r) => setTimeout(r, minDelay));
+    const elapsed = Date.now() - startedAt;
+    const remaining = Math.max(0, minDelay - elapsed);
+    if (remaining > 0) await new Promise((r) => setTimeout(r, remaining));
+    setStartingSession(false);
+    startingRef.current = false;
+    router.push(`/workout/${sessionId}`);
+  };
 
   // Persist last-used generation preferences for smart defaults
   useEffect(() => {
@@ -445,7 +466,7 @@ export default function TodayPage() {
   };
 
   const handleStartWorkout = async () => {
-    if (!suggestion) return;
+    if (!suggestion || startingRef.current) return;
 
     const s = suggestion as {
       sessionName: string;
@@ -464,50 +485,56 @@ export default function TodayPage() {
     const now = Date.now();
     const sessionId = crypto.randomUUID();
 
-    await db.transaction(
-      "rw",
-      [db.workoutSessions, db.sessionExercises],
-      async () => {
-        await db.workoutSessions.add({
-          id: sessionId,
-          name: s.sessionName,
-          gymId: gymId ?? "ftl",
-          status: "active",
-          source: generationState === "offline" ? "fallback" : "ai",
-          focus: [selectedFocus ?? "full_body"],
-          energy: selectedEnergy as "low" | "okay" | "strong" | undefined,
-          estimatedMinutes:
-            selectedTime !== "unlimited" ? parseInt(selectedTime ?? "40") : undefined,
-          startedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        for (const ex of s.exercises) {
-          await db.sessionExercises.add({
-            id: crypto.randomUUID(),
-            sessionId,
-            exerciseId: ex.exerciseId,
-            order: ex.order,
-            status: "pending",
-            targetSets: ex.targetSets,
-            repMin: ex.targetRepMin,
-            repMax: ex.targetRepMax,
-            suggestedWeightKg: ex.suggestedWeightKg,
-            restSeconds: ex.restSeconds,
-            notes: ex.notes,
+    try {
+      await db.transaction(
+        "rw",
+        [db.workoutSessions, db.sessionExercises],
+        async () => {
+          await db.workoutSessions.add({
+            id: sessionId,
+            name: s.sessionName,
+            gymId: gymId ?? "ftl",
+            status: "active",
+            source: generationState === "offline" ? "fallback" : "ai",
+            focus: [selectedFocus ?? "full_body"],
+            energy: selectedEnergy as "low" | "okay" | "strong" | undefined,
+            estimatedMinutes:
+              selectedTime !== "unlimited" ? parseInt(selectedTime ?? "40") : undefined,
+            startedAt: now,
             createdAt: now,
             updatedAt: now,
           });
-        }
-      }
-    );
 
-    router.push(`/workout/${sessionId}`);
+          for (const ex of s.exercises) {
+            await db.sessionExercises.add({
+              id: crypto.randomUUID(),
+              sessionId,
+              exerciseId: ex.exerciseId,
+              order: ex.order,
+              status: "pending",
+              targetSets: ex.targetSets,
+              repMin: ex.targetRepMin,
+              repMax: ex.targetRepMax,
+              suggestedWeightKg: ex.suggestedWeightKg,
+              restSeconds: ex.restSeconds,
+              notes: ex.notes,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
+        }
+      );
+    } catch (err) {
+      console.error("Failed to start workout:", err);
+      setErrorMessage("Couldn't start the workout. Please try again.");
+      return;
+    }
+
+    await startSessionWithTransition(sessionId);
   };
 
   const handleRepeatWorkout = async (source?: WorkoutSession) => {
-    if (!source) return;
+    if (!source || startingRef.current) return;
 
     const now = Date.now();
     const sessionId = crypto.randomUUID();
@@ -516,93 +543,105 @@ export default function TodayPage() {
       .equals(source.id)
       .sortBy("order");
 
-    await db.transaction(
-      "rw",
-      [db.workoutSessions, db.sessionExercises],
-      async () => {
-        await db.workoutSessions.add({
-          id: sessionId,
-          name: source.name,
-          gymId: source.gymId ?? "ftl",
-          status: "active",
-          source: "duplicate",
-          focus: source.focus,
-          energy: selectedEnergy as "low" | "okay" | "strong" | undefined,
-          estimatedMinutes: source.estimatedMinutes,
-          startedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        for (const ex of sourceExercises) {
-          await db.sessionExercises.add({
-            id: crypto.randomUUID(),
-            sessionId,
-            exerciseId: ex.exerciseId,
-            order: ex.order,
-            status: "pending",
-            targetSets: ex.targetSets,
-            repMin: ex.repMin,
-            repMax: ex.repMax,
-            suggestedWeightKg: ex.suggestedWeightKg,
-            restSeconds: ex.restSeconds,
-            notes: ex.notes,
+    try {
+      await db.transaction(
+        "rw",
+        [db.workoutSessions, db.sessionExercises],
+        async () => {
+          await db.workoutSessions.add({
+            id: sessionId,
+            name: source.name,
+            gymId: source.gymId ?? "ftl",
+            status: "active",
+            source: "duplicate",
+            focus: source.focus,
+            energy: selectedEnergy as "low" | "okay" | "strong" | undefined,
+            estimatedMinutes: source.estimatedMinutes,
+            startedAt: now,
             createdAt: now,
             updatedAt: now,
           });
-        }
-      }
-    );
 
-    router.push(`/workout/${sessionId}`);
+          for (const ex of sourceExercises) {
+            await db.sessionExercises.add({
+              id: crypto.randomUUID(),
+              sessionId,
+              exerciseId: ex.exerciseId,
+              order: ex.order,
+              status: "pending",
+              targetSets: ex.targetSets,
+              repMin: ex.repMin,
+              repMax: ex.repMax,
+              suggestedWeightKg: ex.suggestedWeightKg,
+              restSeconds: ex.restSeconds,
+              notes: ex.notes,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
+        }
+      );
+    } catch (err) {
+      console.error("Failed to repeat workout:", err);
+      setErrorMessage("Couldn't start the workout. Please try again.");
+      return;
+    }
+
+    await startSessionWithTransition(sessionId);
   };
 
   const handleStartFromTemplate = async (e: React.MouseEvent<HTMLButtonElement>) => {
     const id = e.currentTarget.dataset.templateId;
     const template = templates.find((t) => t.id === id);
-    if (!template) return;
+    if (!template || startingRef.current) return;
 
     const now = Date.now();
     const sessionId = crypto.randomUUID();
 
-    await db.transaction(
-      "rw",
-      [db.workoutSessions, db.sessionExercises],
-      async () => {
-        await db.workoutSessions.add({
-          id: sessionId,
-          name: template.name,
-          gymId: gymId ?? "ftl",
-          status: "active",
-          source: "template",
-          focus: template.focus ?? [],
-          energy: selectedEnergy as "low" | "okay" | "strong" | undefined,
-          startedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        for (const ex of template.exercises) {
-          await db.sessionExercises.add({
-            id: crypto.randomUUID(),
-            sessionId,
-            exerciseId: ex.exerciseId,
-            order: ex.order,
-            status: "pending",
-            targetSets: ex.targetSets,
-            repMin: ex.repMin,
-            repMax: ex.repMax,
-            suggestedWeightKg: ex.suggestedWeightKg,
-            restSeconds: ex.restSeconds,
-            notes: ex.notes,
+    try {
+      await db.transaction(
+        "rw",
+        [db.workoutSessions, db.sessionExercises],
+        async () => {
+          await db.workoutSessions.add({
+            id: sessionId,
+            name: template.name,
+            gymId: gymId ?? "ftl",
+            status: "active",
+            source: "template",
+            focus: template.focus ?? [],
+            energy: selectedEnergy as "low" | "okay" | "strong" | undefined,
+            startedAt: now,
             createdAt: now,
             updatedAt: now,
           });
-        }
-      }
-    );
 
-    router.push(`/workout/${sessionId}`);
+          for (const ex of template.exercises) {
+            await db.sessionExercises.add({
+              id: crypto.randomUUID(),
+              sessionId,
+              exerciseId: ex.exerciseId,
+              order: ex.order,
+              status: "pending",
+              targetSets: ex.targetSets,
+              repMin: ex.repMin,
+              repMax: ex.repMax,
+              suggestedWeightKg: ex.suggestedWeightKg,
+              restSeconds: ex.restSeconds,
+              notes: ex.notes,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
+        }
+      );
+    } catch (err) {
+      console.error("Failed to start template:", err);
+      setErrorMessage("Couldn't start the workout. Please try again.");
+      return;
+    }
+
+    await startSessionWithTransition(sessionId);
   };
 
   const handleImportLog = async () => {
@@ -993,13 +1032,32 @@ export default function TodayPage() {
               suggestion={suggestion as any}
               onStart={handleStartWorkout}
               onRegenerate={handleGenerate}
-              onReplaceExercise={(oldId, newId) => {
+              availableEquipmentCodes={
+                gym?.equipmentCodes.filter(
+                  (c) => !gym.unavailableEquipmentCodes?.includes(c)
+                ) ?? []
+              }
+              onReplaceExercise={async (oldId, newId) => {
+                let suggestedWeightKg: number | undefined;
+                const lastSet = await db.workoutSets
+                  .where("[exerciseId+completedAt]")
+                  .between(
+                    [newId, Dexie.minKey],
+                    [newId, Dexie.maxKey]
+                  )
+                  .reverse()
+                  .first();
+                if (lastSet && lastSet.weightKg != null) {
+                  suggestedWeightKg = lastSet.weightKg;
+                }
                 setSuggestion((prev: any) => {
                   if (!prev) return prev;
                   return {
                     ...prev,
                     exercises: prev.exercises.map((e: any) =>
-                      e.exerciseId === oldId ? { ...e, exerciseId: newId } : e
+                      e.exerciseId === oldId
+                        ? { ...e, exerciseId: newId, suggestedWeightKg }
+                        : e
                     )
                   };
                 });
@@ -1274,6 +1332,33 @@ export default function TodayPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Start workout transition overlay */}
+      <AnimatePresence>
+        {startingSession && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.2 }}
+            className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-background"
+            role="status"
+            aria-live="assertive"
+          >
+            <YonoAnimation
+              state="encouraging"
+              size={140}
+              reducedMotion={!!reduceMotion}
+            />
+            <p className="mt-6 text-center font-display text-xl font-bold text-foreground px-8 leading-snug">
+              janji harus semangat ya maniez
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Yono is setting up your session...
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1285,6 +1370,7 @@ function WorkoutSuggestionCard({
   onReplaceExercise,
   onAddExercise,
   onRemoveExercise,
+  availableEquipmentCodes,
 }: {
   suggestion: {
     sessionName: string;
@@ -1306,8 +1392,10 @@ function WorkoutSuggestionCard({
   onReplaceExercise: (oldId: string, newId: string) => void;
   onAddExercise: (newId: string) => void;
   onRemoveExercise: (id: string) => void;
+  availableEquipmentCodes: string[];
 }) {
   const [detailsExId, setDetailsExId] = useState<string | null>(null);
+  const [changeExId, setChangeExId] = useState<string | null>(null);
   const [showAddSelector, setShowAddSelector] = useState(false);
 
   const profile = useLiveQuery(() => db.profiles.get("main-user"), []);
@@ -1349,7 +1437,8 @@ function WorkoutSuggestionCard({
             return (
               <div
                 key={ex.exerciseId}
-                className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl"
+                onClick={() => setChangeExId(ex.exerciseId)}
+                className="flex items-center gap-3 p-3 bg-muted/50 rounded-xl cursor-pointer hover:bg-muted/80 transition-colors"
               >
                 <span className="text-sm font-bold text-muted-foreground w-5">
                   {idx + 1}
@@ -1357,7 +1446,10 @@ function WorkoutSuggestionCard({
                 <div className="flex-1 min-w-0">
                   <div
                     className="flex items-center gap-1.5 cursor-pointer hover:text-primary transition-colors group"
-                    onClick={() => setDetailsExId(ex.exerciseId)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDetailsExId(ex.exerciseId);
+                    }}
                   >
                     <p className="font-medium text-foreground text-sm truncate group-hover:underline">
                       {exerciseDef?.name ?? ex.exerciseId}
@@ -1379,8 +1471,22 @@ function WorkoutSuggestionCard({
                 </div>
 
                 <button
-                  onClick={() => onRemoveExercise(ex.exerciseId)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setChangeExId(ex.exerciseId);
+                  }}
+                  className="p-2 text-muted-foreground hover:text-primary transition-colors"
+                  aria-label={`Change ${exerciseDef?.name ?? ex.exerciseId}`}
+                >
+                  <RefreshCwIcon className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemoveExercise(ex.exerciseId);
+                  }}
                   className="p-2 text-muted-foreground hover:text-destructive transition-colors ml-2"
+                  aria-label={`Remove ${exerciseDef?.name ?? ex.exerciseId}`}
                 >
                   <TrashIcon className="w-4 h-4" />
                 </button>
@@ -1425,6 +1531,18 @@ function WorkoutSuggestionCard({
         onReplace={(newId) => {
           if (detailsExId) onReplaceExercise(detailsExId, newId);
           setDetailsExId(null);
+        }}
+      />
+
+      <ChangeExerciseSheet
+        open={!!changeExId}
+        onOpenChange={(open) => !open && setChangeExId(null)}
+        currentExerciseId={changeExId}
+        usedExerciseIds={suggestion.exercises.map((e) => e.exerciseId)}
+        availableEquipmentCodes={availableEquipmentCodes}
+        onSelect={(newId) => {
+          if (changeExId) onReplaceExercise(changeExId, newId);
+          setChangeExId(null);
         }}
       />
 

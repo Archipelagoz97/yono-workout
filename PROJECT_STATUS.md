@@ -1,6 +1,56 @@
 # Yono Workout — Project Status
 
-## Latest: Workout UX — final-set button, RPE explainer, multi-undo, Complete-modal layout (2026-08-07)
+## Latest: Change-exercise sheet, start transition, set toast + undo (2026-08-07)
+
+Three UX improvements verified end-to-end on the production build.
+
+### 1. Change-exercise flow (every draft exercise)
+New `src/components/workout/ChangeExerciseSheet.tsx` bottom sheet, opened per-row via a
+Change button (`aria-label="Change <name>"`) or row tap on the `/today` suggestion card.
+- Shows the current exercise description ("Replace <name> with another movement.").
+- **Recommended** section: top-6 ranked by movementPattern + primary-muscle overlap with the
+  original, gym equipment match, training-history familiarity (`db.workoutSets` live query),
+  and `alternatives` hints; score 0 → falls to "All exercises".
+- **All exercises** list + search field (`SearchIcon`, filters by name/alias).
+- Cancel button; replace is async and re-suggests weight from the last logged set for the new
+  exercise via a Dexie `[exerciseId+completedAt]` range query.
+
+### 2. Start-workout transition overlay
+Starting/repeating/template-starting a workout now shows a full-screen `z-[100]` Yono overlay
+(min 900ms, double-tap guarded via `startingRef`, `useReducedMotion` respected) with the exact
+text **"janji harus semangat ya maniez"** and "Yono is setting up your session…" before
+navigating to `/workout/<id>`.
+
+### 3. Complete-set toast with real Undo
+Completing a set shows a compact toast **`Set X ditambah · 40 lb × 12 reps · Logged`**
+(weight/assistance/duration/distance/setType aware) with a working **Undo** button
+(`#btn-undo-set-toast`). Undo deletes the exact set, stops the rest timer, restores exercise
+position/set number and the input values, then shows `Set dibatalkan.` Auto-dismisses after 5s.
+Positioned above the BottomNav: `bottom: calc(64px + env(safe-area-inset-bottom, 0px) + 16px)`,
+`z-[60]`, `role="status"`. The `savedCopy` Yono quote under the exercise now shows only the
+flavor text (the "Set X ditambah" text lives in the toast).
+
+### Files changed
+- `src/components/workout/ChangeExerciseSheet.tsx` (new).
+- `src/app/today/page.tsx` (sheet wiring, `startSessionWithTransition`, guarded start handlers,
+  async `onReplaceExercise`, overlay JSX, `Dexie` import).
+- `src/app/workout/[sessionId]/page.tsx` (`showSetToast`/`handleUndoSet`/`handleToastUndo`,
+  toast JSX, duration toast branch, `savedCopy` flavor-only).
+
+### Checks
+- `npx tsc --noEmit` clean; `npm run build` clean (18 routes); `npm run lint` unchanged at the
+  47-problem pre-existing baseline.
+- Playwright (prod build, chromium, port 3101): **19/20** feature script (sole "failure" was a
+  harness artifact — weight-undo on a bodyweight exercise has no weight input to restore);
+  **5/5** undo script (weight prefill `88.18 lb`, toast `Set 1 ditambah · 95 lb × 12 reps ·
+  Logged`, undo restores weight 95, second toast, toast dismissed); cardio duration toast
+  `Set 1 ditambah · 15 sec · Logged` + undo present (initial harness failure was a bug in the
+  test's `page.evaluate` string, not the app).
+- Responsive matrix at **320px and 430px**: change sheet fits (width = viewport, search
+  filters, Cancel works), start-overlay text fits in-view, toast in-view and above the bottom
+  nav — **ALL PASS**.
+
+## Previous: Workout UX — final-set button, RPE explainer, multi-undo, Complete-modal layout (2026-08-07)
 
 ### 1. Final-set Complete button
 On the last working set of the last exercise (non-superset last-in-group, `workingSetsDone + 1 === targetSets`)
