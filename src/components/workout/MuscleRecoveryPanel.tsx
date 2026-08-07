@@ -1,12 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { motion } from "framer-motion";
 import { useLiveQuery } from "dexie-react-hooks";
-import { HeartPulseIcon, CheckCircle2Icon, ClockIcon } from "lucide-react";
+import { HeartPulseIcon } from "lucide-react";
 import db from "@/db/database";
 import { exercises as exerciseCatalog } from "@/data/exercises.compact";
-import { cn } from "@/lib/utils";
+import { StatusChip } from "@/components/workout/TodayControls";
 
 const exerciseMap = new Map(exerciseCatalog.map((e) => [e.id, e]));
 
@@ -52,6 +51,9 @@ const RECOVERY_HOURS: Record<string, number> = {
 
 const DEFAULT_RECOVERY_HOURS = 48;
 
+// Several muscle IDs map to the same display label (e.g. latissimus_dorsi,
+// rhomboids and middle_traps all become "Back"). We group by label and keep
+// only the least-recovered muscle per group so no label is ever duplicated.
 const MUSCLE_LABELS: Record<string, string> = {
   latissimus_dorsi: "Back",
   rhomboids: "Back",
@@ -90,25 +92,6 @@ const MUSCLE_LABELS: Record<string, string> = {
   forearms: "Forearms",
 };
 
-const MUSCLE_EMOJIS: Record<string, string> = {
-  "Back": "🔙",
-  "Traps": "🦖",
-  "Rear Delt": "🎯",
-  "Shoulders": "🏔️",
-  "Chest": "🫁",
-  "Triceps": "💪",
-  "Biceps": "🦾",
-  "Forearms": "🤏",
-  "Quads": "🦵",
-  "Hamstrings": "🍗",
-  "Glutes": "🍑",
-  "Adductors": "🦀",
-  "Calves": "🐐",
-  "Core": "🧱",
-  "Lower back": "🛡️",
-  "Hip flexors": "🚪",
-};
-
 const muscleOrder = [
   "quadriceps",
   "hamstrings",
@@ -127,10 +110,16 @@ const muscleOrder = [
   "core",
 ];
 
-function formatRemaining(hours: number): string {
-  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m`;
-  if (hours < 24) return `${Math.round(hours)}h`;
-  return `${(hours / 24).toFixed(1)}d`;
+function formatAgo(hours: number): string {
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m ago`;
+  if (hours < 24) return `${Math.round(hours)}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+function statusFor(hours: number, target: number): "fresh" | "recovering" | "recent" {
+  if (hours >= target) return "fresh";
+  if (hours < 24) return "recent";
+  return "recovering";
 }
 
 export function MuscleRecoveryPanel() {
@@ -161,7 +150,7 @@ export function MuscleRecoveryPanel() {
       const label = MUSCLE_LABELS[muscle] ?? muscle.replace(/_/g, " ");
       const elapsed = Math.max(0, (now - ts) / 3600000);
       const existing = byLabel.get(label);
-      // Keep the least-recovered muscle per label so we don't show duplicates.
+      // Keep the least-recovered muscle per label so no duplicate groups show.
       if (!existing || elapsed < existing.hours) {
         byLabel.set(label, { muscle, lastTrained: ts, hours: elapsed });
       }
@@ -171,8 +160,8 @@ export function MuscleRecoveryPanel() {
 
   if (!recovery || !muscleData) {
     return (
-      <div className="px-4 mb-6">
-        <div className="h-40 skeleton rounded-2xl" />
+      <div className="px-4 mb-6 relative z-10">
+        <div className="h-36 skeleton rounded-2xl" />
       </div>
     );
   }
@@ -188,71 +177,38 @@ export function MuscleRecoveryPanel() {
 
   return (
     <div className="px-4 mb-6 relative z-10">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-semibold text-foreground flex items-center gap-1.5">
+      <div className="flex items-center justify-between mb-2.5">
+        <h2 className="text-[19px] font-semibold tracking-tight text-foreground flex items-center gap-1.5">
           <HeartPulseIcon className="w-4 h-4 text-accent" />
           Muscle recovery
         </h2>
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-xs font-medium text-muted-foreground">
           {readyCount}/{muscleData.length} ready
         </span>
       </div>
-      <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
-        <div className="space-y-3.5">
-          {muscleData.map(({ muscle, hours }) => {
-            const label = MUSCLE_LABELS[muscle] ?? muscle.replace(/_/g, " ");
-            const target = RECOVERY_HOURS[muscle] ?? DEFAULT_RECOVERY_HOURS;
-            const recovered = hours >= target;
-            const pct = Math.min(100, Math.round((hours / target) * 100));
-            const remaining = Math.max(0, target - hours);
-            return (
-              <div key={muscle}>
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm">{MUSCLE_EMOJIS[label] ?? "💪"}</span>
-                    <span className="text-xs font-semibold text-foreground truncate">
-                      {label}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {recovered ? (
-                      <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                        <CheckCircle2Icon className="w-3 h-3" />
-                        Ready
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-muted-foreground">
-                        <ClockIcon className="w-3 h-3" />
-                        {formatRemaining(remaining)} left
-                      </span>
-                    )}
-                    <span className="text-[11px] font-mono text-muted-foreground w-9 text-right">
-                      {pct}%
-                    </span>
-                  </div>
-                </div>
-                <div className="relative h-1.5 rounded-full bg-muted overflow-hidden">
-                  <motion.div
-                    initial={{ width: 0 }}
-                    animate={{ width: `${pct}%` }}
-                    transition={{ duration: 0.6, ease: "easeOut" }}
-                    className={cn(
-                      "h-full rounded-full",
-                      recovered
-                        ? "bg-emerald-500"
-                        : pct > 50
-                        ? "bg-amber-500"
-                        : "bg-red-500"
-                    )}
-                  />
-                </div>
+
+      <div className="bg-card ring-1 ring-foreground/10 rounded-2xl px-4 py-1">
+        {muscleData.map(({ muscle, hours }) => {
+          const label = MUSCLE_LABELS[muscle] ?? muscle.replace(/_/g, " ");
+          const target = RECOVERY_HOURS[muscle] ?? DEFAULT_RECOVERY_HOURS;
+          const status = statusFor(hours, target);
+          return (
+            <div
+              key={muscle}
+              className="flex items-center justify-between gap-2 py-3 border-b border-border/60 last:border-0"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground truncate">{label}</p>
+                <p className="text-[11px] text-muted-foreground">{formatAgo(hours)}</p>
               </div>
-            );
-          })}
-        </div>
+              <StatusChip status={status} className="shrink-0" />
+            </div>
+          );
+        })}
       </div>
+
       <p className="text-[10px] text-muted-foreground mt-2">
-        Approximate recovery estimates based on when each muscle was last trained.
+        Approximate training history based on recent logged workouts.
       </p>
     </div>
   );

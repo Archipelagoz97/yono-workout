@@ -1,6 +1,61 @@
 # Yono Workout — Project Status
 
-## Latest Feature: Workout Volume Achievement (2026-08-06)
+## Latest: /today Redesign — Premium Calm Dashboard (2026-08-07)
+
+Complete visual/UX redesign of the `/today` dashboard into a calm, premium mobile layout.
+All generation logic (DeepSeek, offline fallback, IndexedDB context), active-workout restore,
+templates, and import are preserved; only presentation changed.
+
+### UI problems found during redesign
+- Focus cards were emoji-based, horizontally-scrolled (hidden options, cramped 88px cards),
+  and `choose`/specific targets used identical 🔥 icons.
+- Muscle recovery rendered muscle IDs that map to the same display label — **"Back" appeared
+  twice** because multiple muscle IDs (`latissimus_dorsi`, `rhomboids`, `middle_traps`) all
+  label as "Back" in `MUSCLE_LABELS`. Fixed by grouping by display label and keeping only the
+  least-recovered muscle per group (see below).
+- Header was oversized (title `text-3xl`, `pt-12 mb-10`) pushing CTAs below the fold;
+  vertical column of duration/energy buttons wasted vertical space.
+- Equipment mode was a wrapping flex of `min-w-[80px]` buttons that reflowed awkwardly.
+- Import + Templates competed visually with the primary CTA; an unlabeled "+" button sat
+  next to "Yono AI".
+
+### Files changed
+| File | Change |
+| --- | --- |
+| `src/app/today/page.tsx` | Rewritten: compact header (30px title, 15px sub, 68px Yono, 24-28px padding), single Active/Last-workout card (Resume/Repeat), 2-col focus grid (3-col on ≥sm, 88-100px cards, `aria-pressed`, Lucide icons, cream selected state), segmented Duration (20m/30m/40m/60m/No limit), 3-button Energy (Low/Okay/Strong), Equipment = gym selector row (ChevronDown → `/gyms`) + horizontally-scrolling quick-mode chips, full-width "Generate workout with Yono" + "Create manually" CTAs, "More options" bottom sheet (Import + Templates), compact Recent-workout rows with Repeat + "See all" → `/history`. Removed unused `greetingCopy`/`getCopy`. Fixed `Date.now()` purity lint in this file (via `nowTs` lazy state). |
+| `src/components/workout/TodayControls.tsx` | New: shared primitives — `SectionHeader`, `SelectionCard`, `SegmentedControl`, `ChipSelector`, `CompactWorkoutRow`, `StatusChip`. |
+| `src/components/workout/MuscleRecoveryPanel.tsx` | Rewritten: dedupes muscle display labels (fixes duplicate "Back"), compact status list rows (label + relative time + `StatusChip`), statuses Fresh (sage) / Recovering (muted amber) / Recently trained (muted coral), caption "Approximate training history based on recent logged workouts." |
+| `src/lib/storage/index.ts` | (unchanged) still provides `getSelectedGymId`/`getWorkoutPrefs`/`saveWorkoutPrefs` used by today. |
+| `src/components/layout/BottomNav.tsx` | (unchanged) fixed nav kept; Today dot still shows on active session. |
+
+### Duplicate-"Back" root cause
+`src/components/workout/MuscleRecoveryPanel.tsx` builds recovery from `def.primaryMuscles`.
+Multiple primary-muscle IDs label to "Back" (`latissimus_dorsi`, `rhomboids`, `middle_traps`),
+and `muscleOrder` includes two of them, so a per-ID render produced two "Back" rows. The panel
+now groups by `MUSCLE_LABELS` in a `Map`, keeping the least-recovered (largest elapsed hours)
+muscle per label — one row per visible group.
+
+### Responsive / viewport
+- Target tested widths 320/360/375/393/412/430px. Root container keeps `overflow-hidden`,
+  chips scroll internally (`overflow-x-auto scrollbar-none`), segmented controls use
+  `min-w-0` + `text-xs` so 5 duration options fit at 320px without page-level scroll.
+- Same layout shell as before (single column, `pb-safe-nav`), no doc-level horizontal scroll.
+
+### Checks
+- `npm run build` — clean (Next 16.3.0, Turbopack; all 18 routes)
+- `npm run lint` — **47 problems (31 errors, 16 warnings)** vs 55 baseline before this change.
+  My diff fixed 2 `Date.now` purity errors in today/page.tsx. All remaining errors are
+  pre-existing repo-wide (`no-explicit-any` in API routes + suggestion handlers preserved
+  verbatim, setState-in-effect in coach/workout, impure `Date.now`/`Math.random` in
+  history/profile/progress/YonoAnimation, unescaped entities in onboarding).
+- No typecheck/test scripts exist in package.json (only dev/build/start/lint).
+
+### Notes / next steps
+- "Import from AI chat log" moved into the "More options" bottom sheet (feature preserved).
+- Could later move Import into `/coach` entirely, and type the suggestion handlers
+  (`as any` / `prev: any`) to eliminate remaining lint noise.
+
+## Previous: Workout Volume Achievement (2026-08-06)
 
 Per-session celebration popup shown on the "Workout Complete" dialog, based on total
 volume lifted (Σ weightKg × reps across all completed sets in the session).

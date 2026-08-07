@@ -1,9 +1,14 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { ZapIcon, ClockIcon, FlameIcon, WrenchIcon, RefreshCwIcon, PlayIcon, AlertCircleIcon, Settings2Icon, InfoIcon, PlusIcon, XIcon, TrashIcon, FileTextIcon, RepeatIcon, BookmarkIcon, CopyIcon, CheckIcon } from "lucide-react";
+import {
+  SparklesIcon, DumbbellIcon, FootprintsIcon, PersonStandingIcon, LayersIcon,
+  HeartPulseIcon, MoonIcon, SunIcon, ZapIcon, ChevronDownIcon, FlameIcon,
+  PlayIcon, RepeatIcon, PlusIcon, FileTextIcon, TrashIcon, AlertCircleIcon,
+  InfoIcon, CopyIcon, CheckIcon, RefreshCwIcon, MoreHorizontalIcon, BookmarkIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,11 +16,20 @@ import { YonoAnimation } from "@/components/yono/YonoAnimation";
 import { ExerciseDetailsDialog } from "@/components/workout/ExerciseDetailsDialog";
 import { ExerciseSelectorDialog } from "@/components/workout/ExerciseSelectorDialog";
 import { MuscleRecoveryPanel } from "@/components/workout/MuscleRecoveryPanel";
+import {
+  SectionHeader,
+  SelectionCard,
+  SegmentedControl,
+  ChipSelector,
+  CompactWorkoutRow,
+} from "@/components/workout/TodayControls";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { getCopy } from "@/data/yono-copy";
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from "@/components/ui/sheet";
 import db from "@/db/database";
 import { useLiveQuery } from "dexie-react-hooks";
-import { getSelectedGymId, setSelectedGymId, getWorkoutPrefs, saveWorkoutPrefs } from "@/lib/storage";
+import { getSelectedGymId, getWorkoutPrefs, saveWorkoutPrefs } from "@/lib/storage";
 import { getTemplates, deleteTemplate, type WorkoutTemplate } from "@/lib/templates";
 import { exercises } from "@/data/exercises.compact";
 import { getFallbackExercises } from "@/lib/progression";
@@ -24,42 +38,47 @@ import type { WorkoutSession } from "@/types";
 import type { BulkImportLogResult } from "@/lib/ai/schemas";
 
 const FOCUS_OPTIONS = [
-  { id: "choose", label: "Choose for me", emoji: "🎲" },
-  { id: "upper_body", label: "Upper body", emoji: "💪" },
-  { id: "lower_body", label: "Lower body", emoji: "🦵" },
-  { id: "full_body", label: "Full body", emoji: "🏋️" },
-  { id: "back", label: "Back", emoji: "🔙" },
-  { id: "chest", label: "Chest", emoji: "🫁" },
-  { id: "shoulders", label: "Shoulders", emoji: "🔝" },
-  { id: "arms", label: "Arms", emoji: "💪" },
-  { id: "back_arms", label: "Back + Arms", emoji: "🎯" },
-  { id: "chest_shoulders", label: "Chest + Shoulders", emoji: "⬆️" },
-  { id: "legs", label: "Legs", emoji: "🦿" },
-  { id: "cardio", label: "Cardio", emoji: "🏃" },
-  { id: "recovery", label: "Recovery", emoji: "🧘" },
+  { id: "choose", label: "Choose for me", icon: SparklesIcon },
+  { id: "upper_body", label: "Upper body", icon: DumbbellIcon },
+  { id: "lower_body", label: "Lower body", icon: FootprintsIcon },
+  { id: "full_body", label: "Full body", icon: PersonStandingIcon },
+  { id: "back_arms", label: "Back + Arms", icon: LayersIcon },
+  { id: "cardio", label: "Cardio", icon: HeartPulseIcon },
 ];
 
+const FOCUS_SPECIFIC = [
+  { id: "back", label: "Back" },
+  { id: "chest", label: "Chest" },
+  { id: "shoulders", label: "Shoulders" },
+  { id: "arms", label: "Arms" },
+  { id: "chest_shoulders", label: "Chest + Shoulders" },
+  { id: "legs", label: "Legs" },
+  { id: "recovery", label: "Recovery" },
+];
+
+const ALL_FOCUS = [...FOCUS_OPTIONS, ...FOCUS_SPECIFIC];
+
 const TIME_OPTIONS = [
-  { id: "20", label: "20 min" },
-  { id: "30", label: "30 min" },
-  { id: "40", label: "40 min" },
-  { id: "60", label: "60 min" },
+  { id: "20", label: "20m" },
+  { id: "30", label: "30m" },
+  { id: "40", label: "40m" },
+  { id: "60", label: "60m" },
   { id: "unlimited", label: "No limit" },
 ];
 
 const ENERGY_OPTIONS = [
-  { id: "low", label: "Low", emoji: "😴" },
-  { id: "okay", label: "Okay", emoji: "😊" },
-  { id: "strong", label: "Strong", emoji: "⚡" },
+  { id: "low", label: "Low", icon: <MoonIcon className="w-4 h-4" /> },
+  { id: "okay", label: "Okay", icon: <SunIcon className="w-4 h-4" /> },
+  { id: "strong", label: "Strong", icon: <ZapIcon className="w-4 h-4" /> },
 ];
 
 const EQUIPMENT_OPTIONS = [
-  { id: "full", label: "FTL Full Gym" },
-  { id: "machine", label: "Machine only" },
-  { id: "cable", label: "Cable only" },
-  { id: "dumbbell", label: "Dumbbell only" },
-  { id: "barbell", label: "Barbell only" },
-  { id: "cardio", label: "Cardio only" },
+  { id: "full", label: "Full gym" },
+  { id: "machine", label: "Machines" },
+  { id: "cable", label: "Cable" },
+  { id: "dumbbell", label: "Dumbbells" },
+  { id: "barbell", label: "Barbell" },
+  { id: "cardio", label: "Cardio" },
 ];
 
 type GenerationState = "idle" | "loading" | "success" | "error" | "offline";
@@ -83,7 +102,7 @@ Rules:
 
 function LoadingLogs({ sessions }: { sessions: WorkoutSession[] | undefined }) {
   const [logs, setLogs] = useState<string[]>([]);
-  
+
   useEffect(() => {
     const baseLogs = ["Activating Yono AI..."];
     if (sessions && sessions.length > 0) {
@@ -110,7 +129,7 @@ function LoadingLogs({ sessions }: { sessions: WorkoutSession[] | undefined }) {
         });
         i++;
       }
-    }, 700); 
+    }, 700);
     return () => clearInterval(interval);
   }, [sessions]);
 
@@ -118,9 +137,9 @@ function LoadingLogs({ sessions }: { sessions: WorkoutSession[] | undefined }) {
     <div className="w-full max-w-[300px] h-28 mt-6 overflow-hidden bg-black/60 backdrop-blur-md rounded-2xl p-4 shadow-inner border border-white/10 flex flex-col justify-end">
       <div className="flex flex-col gap-1.5 justify-end font-mono text-[11px] text-green-400">
         {logs.map((l, i) => (
-          <motion.div 
-            key={`${i}-${l}`} 
-            initial={{ opacity: 0, x: -10 }} 
+          <motion.div
+            key={`${i}-${l}`}
+            initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             className="truncate"
           >
@@ -146,7 +165,6 @@ export default function TodayPage() {
   const [generationState, setGenerationState] = useState<GenerationState>("idle");
   const [suggestion, setSuggestion] = useState<unknown | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
-  const [greetingCopy] = useState(() => getCopy("greeting"));
   const [gymId] = useState(() => getSelectedGymId());
   const [templates, setTemplates] = useState<WorkoutTemplate[]>(() => getTemplates());
 
@@ -157,6 +175,7 @@ export default function TodayPage() {
   const [importError, setImportError] = useState("");
   const [showReversePrompt, setShowReversePrompt] = useState(false);
   const [promptCopied, setPromptCopied] = useState(false);
+  const [showMoreSheet, setShowMoreSheet] = useState(false);
 
   // Persist last-used generation preferences for smart defaults
   useEffect(() => {
@@ -188,8 +207,10 @@ export default function TodayPage() {
   const gym = useLiveQuery(() => db.gyms.get(gymId ?? "ftl"), [gymId]);
   const profile = useLiveQuery(() => db.profiles.get("main-user"));
 
+  const nowTs = useState(() => Date.now())[0];
+
   const daysSinceLastWorkout = recentSessions?.[0]
-    ? Math.floor((Date.now() - (recentSessions[0].completedAt ?? 0)) / (1000 * 60 * 60 * 24))
+    ? Math.floor((nowTs - (recentSessions[0].completedAt ?? 0)) / (1000 * 60 * 60 * 24))
     : null;
 
   const workoutStreak = (() => {
@@ -411,7 +432,7 @@ export default function TodayPage() {
     );
 
     const offlineSuggestion = {
-      sessionName: FOCUS_OPTIONS.find((f) => f.id === selectedFocus)?.label ?? "Workout",
+      sessionName: ALL_FOCUS.find((f) => f.id === selectedFocus)?.label ?? "Workout",
       reason:
         "DeepSeek is unavailable. Yono created a simple workout using your exercise catalog.",
       estimatedMinutes: selectedTime ? parseInt(selectedTime) : 40,
@@ -485,8 +506,7 @@ export default function TodayPage() {
     router.push(`/workout/${sessionId}`);
   };
 
-  const handleRepeatLastWorkout = async () => {
-    const source = recentSessions?.[0];
+  const handleRepeatWorkout = async (source?: WorkoutSession) => {
     if (!source) return;
 
     const now = Date.now();
@@ -684,6 +704,22 @@ export default function TodayPage() {
     setImportState("idle");
   };
 
+  const lastWorkout = activeSession ? null : recentSessions?.[0] ?? null;
+  const recentRows = activeSession
+    ? (recentSessions ?? [])
+    : (recentSessions ?? []).slice(1);
+
+  const recentMeta = (session: WorkoutSession) => {
+    const daysSince = session.completedAt
+      ? Math.floor((nowTs - session.completedAt) / (1000 * 60 * 60 * 24))
+      : null;
+    const dayText =
+      daysSince === 0 ? "Today" : daysSince === 1 ? "Yesterday" : daysSince ? `${daysSince}d ago` : "";
+    return [dayText, session.estimatedMinutes ? `~${session.estimatedMinutes}m` : ""]
+      .filter(Boolean)
+      .join(" · ");
+  };
+
   return (
     <div className="relative max-w-md mx-auto min-h-dvh bg-background overflow-hidden pb-safe-nav">
       {/* Decorative Blur Backgrounds */}
@@ -692,237 +728,162 @@ export default function TodayPage() {
         <div className="absolute top-[15%] right-[-5%] w-[180px] h-[180px] bg-secondary/10 rounded-full blur-[50px]" />
       </div>
 
-      {/* Header */}
-      <div className="relative z-10 flex items-end justify-between px-4 pt-12 mb-10">
-        <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-foreground leading-tight">
+      {/* Compact header */}
+      <header className="relative z-10 flex items-end justify-between gap-3 px-6 pt-7 pb-6">
+        <div className="min-w-0">
+          <h1 className="text-[30px] font-extrabold tracking-tight text-foreground leading-tight truncate">
             {yonoGreeting.line}
           </h1>
-          <p className="text-sm font-medium text-muted-foreground mt-2">
+          <p className="text-[15px] font-medium text-muted-foreground mt-1">
             {yonoGreeting.sub}
           </p>
           {workoutStreak >= 2 && (
-            <div className="inline-flex items-center gap-1 mt-2 px-2.5 py-1 bg-accent/10 rounded-full">
-              <span className="text-xs font-bold text-accent">{workoutStreak}-day streak 🔥</span>
+            <div className="inline-flex items-center gap-1.5 mt-2.5 px-2.5 py-1 bg-accent/10 rounded-full">
+              <FlameIcon className="w-3.5 h-3.5 text-accent" />
+              <span className="text-xs font-bold text-accent">{workoutStreak}-day streak</span>
             </div>
           )}
         </div>
-        
-        {/* Yono Mascot right on the dash */}
-        <div className="w-16 h-16 bg-white/5 border border-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-lg shrink-0 ml-3">
-          <YonoAnimation state="idle" size={55} />
-        </div>
-      </div>
 
-      {/* Resume active workout banner */}
+        {/* Yono Mascot */}
+        <div className="w-[68px] h-[68px] shrink-0 bg-card ring-1 ring-foreground/10 rounded-2xl flex items-center justify-center">
+          <YonoAnimation state="idle" size={54} />
+        </div>
+      </header>
+
+      {/* Active / last workout card */}
       <AnimatePresence>
-        {activeSession && (
+        {activeSession ? (
           <motion.div
+            key="active"
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="mx-4 mb-4"
+            className="px-4 mb-5"
           >
-            <Card className="border-2 border-accent bg-accent/10 p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-medium text-accent uppercase tracking-wide">Active workout</p>
-                  <p className="font-semibold text-foreground mt-0.5">{activeSession.name}</p>
+            <div className="bg-card ring-1 ring-accent/30 border border-accent/20 rounded-2xl p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium text-accent uppercase tracking-wide">Active workout</p>
+                  <p className="font-semibold text-foreground truncate mt-0.5">{activeSession.name}</p>
                 </div>
                 <Button
                   size="sm"
-                  className="bg-accent text-accent-foreground hover:bg-accent/90"
+                  className="bg-accent text-accent-foreground hover:bg-accent/90 shrink-0"
                   onClick={() => router.push(`/workout/${activeSession.id}`)}
                 >
                   <PlayIcon className="w-4 h-4 mr-1" />
                   Resume
                 </Button>
               </div>
-            </Card>
+            </div>
           </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Repeat last workout banner */}
-      <AnimatePresence>
-        {!activeSession && recentSessions && recentSessions.length > 0 && (
+        ) : lastWorkout ? (
           <motion.div
+            key="last"
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="mx-4 mb-4"
+            className="px-4 mb-5"
           >
-            <Card className="p-4 border-primary/20">
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 mr-3">
-                  <p className="text-xs font-medium text-primary uppercase tracking-wide">
-                    Repeat last workout
-                  </p>
-                  <p className="font-semibold text-foreground truncate mt-0.5">
-                    {recentSessions[0].name}
-                  </p>
+            <div className="bg-card ring-1 ring-primary/20 border border-primary/10 rounded-2xl p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">Last workout</p>
+                  <p className="font-semibold text-foreground truncate mt-0.5">{lastWorkout.name}</p>
                 </div>
                 <Button
                   id="btn-repeat-workout"
                   size="sm"
-                  onClick={handleRepeatLastWorkout}
+                  onClick={() => handleRepeatWorkout(lastWorkout)}
                   className="shrink-0"
                 >
                   <RepeatIcon className="w-4 h-4 mr-1" />
-                  Start
+                  Repeat
                 </Button>
               </div>
-            </Card>
+            </div>
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
 
-      {/* Templates */}
-      {templates.length > 0 && (
-        <div className="px-4 mb-6 relative z-10">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-bold text-foreground flex items-center gap-1.5">
-              <BookmarkIcon className="w-4 h-4 text-primary" />
-              Templates
-            </h2>
-            <button
-              onClick={() => setTemplates(getTemplates())}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              Refresh
-            </button>
-          </div>
-          <div className="space-y-2">
-            {templates.map((template) => (
-              <Card key={template.id} className="p-3.5 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-semibold text-foreground text-sm truncate">{template.name}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {template.exercises.length} exercises
-                    {template.focus && template.focus.length > 0 ? ` · ${template.focus.join(", ")}` : ""}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <Button
-                    size="sm"
-                    data-template-id={template.id}
-                    onClick={handleStartFromTemplate}
-                    className="bg-primary text-primary-foreground hover:bg-primary/90"
-                  >
-                    <PlayIcon className="w-3.5 h-3.5 mr-1" />
-                    Start
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => {
-                      deleteTemplate(template.id);
-                      setTemplates(getTemplates());
-                    }}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    <TrashIcon className="w-4 h-4" />
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Muscle recovery heatmap */}
+      {/* Muscle recovery */}
       <MuscleRecoveryPanel />
 
-      {/* Training focus selector */}
-      <div className="px-4 mb-6 relative z-10">
-        <div className="flex justify-between items-end mb-3">
-          <h2 className="text-lg font-bold text-foreground">Target Focus</h2>
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-2 snap-x scrollbar-none">
+      {/* Target focus */}
+      <section className="px-4 mb-6 relative z-10">
+        <SectionHeader title="Target focus" />
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
           {FOCUS_OPTIONS.map((opt) => (
-            <motion.button
+            <SelectionCard
               key={opt.id}
-              whileTap={{ scale: 0.95 }}
-              whileHover={selectedFocus !== opt.id ? { scale: 1.03 } : {}}
-              onClick={() => setSelectedFocus(opt.id === selectedFocus ? null : opt.id)}
-              className={`flex-shrink-0 snap-center w-[88px] h-[92px] rounded-3xl p-3 flex flex-col justify-between transition-all ${
-                selectedFocus === opt.id
-                  ? "bg-primary text-primary-foreground shadow-lg shadow-primary/25 border-transparent"
-                  : "bg-white/5 backdrop-blur-md border border-white/10 text-foreground hover:bg-white/10"
-              }`}
               id={`focus-${opt.id}`}
-            >
-              <span className="text-2xl bg-black/10 w-10 h-10 flex items-center justify-center rounded-xl mb-1">{opt.emoji}</span>
-              <span className="text-[11px] font-bold text-left leading-tight">{opt.label}</span>
-            </motion.button>
+              icon={<opt.icon className="w-4 h-4" />}
+              label={opt.label}
+              selected={selectedFocus === opt.id}
+              onClick={() => setSelectedFocus(selectedFocus === opt.id ? null : opt.id)}
+            />
           ))}
         </div>
-      </div>
+        <div className="mt-2.5">
+          <ChipSelector
+            options={FOCUS_SPECIFIC}
+            value={selectedFocus ?? ""}
+            onChange={setSelectedFocus}
+            idPrefix="focus-specific"
+          />
+        </div>
+      </section>
 
-      {/* Available time & Energy level */}
-      <div className="px-4 mb-6 relative z-10 grid grid-cols-2 gap-3">
-        <div>
-          <h3 className="text-xs font-semibold text-muted-foreground mb-2.5 uppercase tracking-wider flex items-center gap-1.5">
-            <ClockIcon className="w-3.5 h-3.5" /> Duration
-          </h3>
-          <div className="flex flex-col gap-1.5">
-            {TIME_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                onClick={() => setSelectedTime(opt.id === selectedTime ? null : opt.id)}
-                className={`py-2.5 px-3 rounded-2xl text-xs font-semibold transition-all border ${
-                  selectedTime === opt.id
-                    ? "bg-foreground text-background border-transparent shadow-md"
-                    : "bg-white/5 backdrop-blur-md border-white/10 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
+      {/* Duration */}
+      <section className="px-4 mb-6 relative z-10">
+        <SectionHeader title="Duration" />
+        <SegmentedControl
+          options={TIME_OPTIONS}
+          value={selectedTime}
+          onChange={(id) => setSelectedTime(selectedTime === id ? null : id)}
+          idPrefix="time"
+        />
+      </section>
+
+      {/* Energy */}
+      <section className="px-4 mb-6 relative z-10">
+        <SectionHeader title="Energy" />
+        <SegmentedControl
+          options={ENERGY_OPTIONS}
+          value={selectedEnergy}
+          onChange={(id) => setSelectedEnergy(selectedEnergy === id ? null : id)}
+          idPrefix="energy"
+        />
+      </section>
+
+      {/* Equipment */}
+      <section className="px-4 mb-6 relative z-10">
+        <SectionHeader title="Equipment" />
+        <button
+          onClick={() => router.push("/gyms")}
+          className="w-full flex items-center justify-between gap-3 p-4 bg-card ring-1 ring-foreground/10 rounded-2xl text-left hover:ring-foreground/20 transition-colors"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-9 h-9 shrink-0 rounded-xl bg-muted flex items-center justify-center">
+              <DumbbellIcon className="w-4 h-4 text-foreground" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground truncate">{gym?.name ?? "FTL Full Gym"}</p>
+              <p className="text-[11px] text-muted-foreground truncate">Tap to change gym</p>
+            </div>
           </div>
+          <ChevronDownIcon className="w-4 h-4 text-muted-foreground shrink-0" />
+        </button>
+        <div className="mt-2.5">
+          <ChipSelector
+            options={EQUIPMENT_OPTIONS}
+            value={selectedEquipment}
+            onChange={setSelectedEquipment}
+            idPrefix="equipment"
+          />
         </div>
-
-        <div>
-          <h3 className="text-xs font-semibold text-muted-foreground mb-2.5 uppercase tracking-wider flex items-center gap-1.5">
-            <FlameIcon className="w-3.5 h-3.5" /> Energy
-          </h3>
-          <div className="flex flex-col gap-1.5">
-            {ENERGY_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                onClick={() => setSelectedEnergy(opt.id === selectedEnergy ? null : opt.id)}
-                className={`py-2.5 px-3 rounded-2xl text-xs font-semibold transition-all border flex justify-between items-center ${
-                  selectedEnergy === opt.id
-                    ? "bg-foreground text-background border-transparent shadow-md"
-                    : "bg-white/5 backdrop-blur-md border-white/10 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <span>{opt.label}</span>
-                <span className="text-base">{opt.emoji}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Equipment mode */}
-      <div className="px-4 mb-6 relative z-10">
-        <div className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl p-1 flex flex-wrap gap-0.5">
-          {EQUIPMENT_OPTIONS.map((opt) => (
-            <button
-              key={opt.id}
-              onClick={() => setSelectedEquipment(opt.id)}
-              className={`flex-1 min-w-[80px] py-2 text-xs font-bold rounded-xl transition-all ${
-                selectedEquipment === opt.id
-                  ? "bg-secondary text-secondary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      </div>
+      </section>
 
       {/* Error message */}
       {errorMessage && (
@@ -932,20 +893,20 @@ export default function TodayPage() {
         </div>
       )}
 
-      {/* Generate Button */}
-      <div className="px-4 mb-4 mt-2 flex gap-2.5 relative z-10">
+      {/* CTA */}
+      <div className="px-4 mt-1 mb-3 relative z-10 space-y-2.5">
         <Button
           id="btn-generate-workout"
           onClick={handleGenerate}
           disabled={generationState === "loading" || !selectedFocus || !gym}
-          className="flex-1 h-14 rounded-2xl font-bold text-base shadow-lg shadow-primary/20 bg-primary/90 backdrop-blur border border-primary/50 hover:bg-primary"
+          className="w-full h-14 rounded-2xl font-bold text-base shadow-lg shadow-primary/20"
         >
-          <ZapIcon className="w-4 h-4 mr-2" />
-          Yono AI
+          <SparklesIcon className="w-5 h-5 mr-2" />
+          Generate workout with Yono
         </Button>
         <Button
           id="btn-manual-workout"
-          variant="secondary"
+          variant="outline"
           onClick={() => {
             setSuggestion({
               sessionName: "Custom Workout",
@@ -956,22 +917,41 @@ export default function TodayPage() {
             setGenerationState("success");
           }}
           disabled={generationState === "loading" || !gym}
-          className="flex-[0.35] h-14 rounded-2xl font-bold border border-white/10 bg-white/5 backdrop-blur shadow-sm hover:bg-white/10"
+          className="w-full h-12 rounded-2xl font-semibold"
         >
-          <PlusIcon className="w-5 h-5" />
+          <PlusIcon className="w-4 h-4 mr-2" />
+          Create manually
         </Button>
+        <button
+          onClick={() => setShowMoreSheet(true)}
+          className="w-full h-10 rounded-2xl text-xs font-medium text-muted-foreground hover:text-foreground border border-dashed border-border transition-colors flex items-center justify-center gap-1.5"
+        >
+          <MoreHorizontalIcon className="w-4 h-4" />
+          More options
+        </button>
       </div>
 
-      <div className="px-4 mb-0 relative z-10">
-        <Button
-          variant="ghost"
-          onClick={() => { setShowImportDialog(true); setImportState("idle"); setImportText(""); setImportResult(null); setImportError(""); }}
-          className="w-full h-10 rounded-2xl text-xs font-medium text-muted-foreground hover:text-foreground border border-dashed border-border hover:border-primary/30 transition-colors"
-        >
-          <FileTextIcon className="w-3.5 h-3.5 mr-1.5" />
-          Import from AI chat log
-        </Button>
-      </div>
+      {/* Recent workouts */}
+      {recentRows.length > 0 && (
+        <section className="px-4 pb-4 relative z-10">
+          <SectionHeader
+            title="Recent workouts"
+            action="See all"
+            onAction={() => router.push("/history")}
+          />
+          <div className="space-y-2">
+            {recentRows.map((session) => (
+              <CompactWorkoutRow
+                key={session.id}
+                name={session.name}
+                meta={recentMeta(session)}
+                repeatId={`repeat-${session.id}`}
+                onRepeat={() => handleRepeatWorkout(session)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Fullscreen AI Loading */}
       <AnimatePresence>
@@ -991,18 +971,17 @@ export default function TodayPage() {
             <p className="text-muted-foreground text-center px-8 text-sm max-w-[300px]">
               Yono is designing the best session based on your ability and workout history.
             </p>
-            
+
             <LoadingLogs sessions={recentSessions} />
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* Workout suggestion Modal */}
-      <Dialog 
-        open={!!suggestion && (generationState === "success" || generationState === "offline")} 
+      <Dialog
+        open={!!suggestion && (generationState === "success" || generationState === "offline")}
         onOpenChange={(open) => {
           if (!open) {
-            // we don't strictly need to clear it, but we can just close the modal
             setSuggestion(null);
             setGenerationState("idle");
           }
@@ -1019,7 +998,7 @@ export default function TodayPage() {
                   if (!prev) return prev;
                   return {
                     ...prev,
-                    exercises: prev.exercises.map((e: any) => 
+                    exercises: prev.exercises.map((e: any) =>
                       e.exerciseId === oldId ? { ...e, exerciseId: newId } : e
                     )
                   };
@@ -1058,25 +1037,83 @@ export default function TodayPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Recent workouts */}
-      {recentSessions && recentSessions.length > 0 && (
-        <div className="px-4 pb-4">
-          <h2 className="text-base font-semibold text-foreground mb-3">Recent workouts</h2>
-          <div className="space-y-2">
-            {recentSessions.map((session, idx) => (
-              <motion.div
-                key={session.id}
-                initial={{ opacity: 0, y: 15 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: idx * 0.05, duration: 0.3, ease: "easeOut" }}
-              >
-                <RecentSessionCard session={session} />
-              </motion.div>
-            ))}
+      {/* More options sheet */}
+      <Sheet open={showMoreSheet} onOpenChange={setShowMoreSheet}>
+        <SheetContent side="bottom" className="rounded-t-3xl pb-6">
+          <SheetHeader className="pb-2">
+            <SheetTitle>More options</SheetTitle>
+            <SheetDescription>Templates and tools for your session.</SheetDescription>
+          </SheetHeader>
+
+          <div className="px-4 space-y-4">
+            <button
+              onClick={() => {
+                setShowMoreSheet(false);
+                setShowImportDialog(true);
+                setImportState("idle");
+                setImportText("");
+                setImportResult(null);
+                setImportError("");
+              }}
+              className="w-full flex items-center gap-3 p-3.5 bg-muted/40 rounded-2xl text-left hover:bg-muted/60 transition-colors"
+            >
+              <span className="w-9 h-9 shrink-0 rounded-xl bg-card ring-1 ring-foreground/10 flex items-center justify-center">
+                <FileTextIcon className="w-4 h-4 text-foreground" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground">Import from AI chat log</p>
+                <p className="text-[11px] text-muted-foreground">Paste a log from ChatGPT, Claude, or any AI.</p>
+              </div>
+            </button>
+
+            {templates.length > 0 && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <BookmarkIcon className="w-4 h-4 text-primary" />
+                  <h3 className="text-sm font-semibold text-foreground">Templates</h3>
+                </div>
+                <div className="space-y-2">
+                  {templates.map((template) => (
+                    <div
+                      key={template.id}
+                      className="flex items-center justify-between gap-3 p-3 bg-muted/40 rounded-2xl"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-semibold text-foreground text-sm truncate">{template.name}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {template.exercises.length} exercises
+                          {template.focus && template.focus.length > 0 ? ` · ${template.focus.join(", ")}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Button
+                          size="sm"
+                          data-template-id={template.id}
+                          onClick={handleStartFromTemplate}
+                        >
+                          <PlayIcon className="w-3.5 h-3.5 mr-1" />
+                          Start
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            deleteTemplate(template.id);
+                            setTemplates(getTemplates());
+                          }}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <TrashIcon className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        </SheetContent>
+      </Sheet>
 
       {/* Import AI Log Dialog */}
       <Dialog open={showImportDialog} onOpenChange={(open) => { setShowImportDialog(open); if (!open) { setImportState("idle"); } }}>
@@ -1318,7 +1355,7 @@ function WorkoutSuggestionCard({
                   {idx + 1}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <div 
+                  <div
                     className="flex items-center gap-1.5 cursor-pointer hover:text-primary transition-colors group"
                     onClick={() => setDetailsExId(ex.exerciseId)}
                   >
@@ -1340,7 +1377,7 @@ function WorkoutSuggestionCard({
                     {" · "}{ex.restSeconds}s rest
                   </p>
                 </div>
-                
+
                 <button
                   onClick={() => onRemoveExercise(ex.exerciseId)}
                   className="p-2 text-muted-foreground hover:text-destructive transition-colors ml-2"
@@ -1350,9 +1387,9 @@ function WorkoutSuggestionCard({
               </div>
             );
           })}
-          
-          <Button 
-            variant="outline" 
+
+          <Button
+            variant="outline"
             className="w-full border-dashed mt-2 rounded-xl"
             onClick={() => setShowAddSelector(true)}
           >
@@ -1390,8 +1427,8 @@ function WorkoutSuggestionCard({
           setDetailsExId(null);
         }}
       />
-      
-      <ExerciseSelectorDialog 
+
+      <ExerciseSelectorDialog
         open={showAddSelector}
         onOpenChange={setShowAddSelector}
         onSelect={(newId) => {
@@ -1400,30 +1437,5 @@ function WorkoutSuggestionCard({
         }}
       />
     </motion.div>
-  );
-}
-
-function RecentSessionCard({ session }: { session: WorkoutSession }) {
-  const daysSince = session.completedAt
-    ? Math.floor((Date.now() - session.completedAt) / (1000 * 60 * 60 * 24))
-    : null;
-
-  return (
-    <Card className="p-4 flex items-center justify-between hover:bg-muted/30 transition-colors cursor-pointer">
-      <div>
-        <p className="font-medium text-foreground text-sm">{session.name}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {daysSince === 0
-            ? "Today"
-            : daysSince === 1
-            ? "Yesterday"
-            : `${daysSince}d ago`}
-          {session.estimatedMinutes ? ` · ~${session.estimatedMinutes}m` : ""}
-        </p>
-      </div>
-      <Badge variant="outline" className="text-xs">
-        {session.focus?.join(", ") ?? ""}
-      </Badge>
-    </Card>
   );
 }
