@@ -84,3 +84,51 @@ export function notifyRestComplete(): void {
   playChime();
   vibrate();
 }
+
+const WORKOUT_REMINDER_KEY = "yono:last-workout-reminder-day";
+
+/**
+ * Ask for permission, then fire the once-a-day workout reminder.
+ * The permission prompt is only shown on the first request.
+ * Call from a user gesture (button tap) so browsers allow the prompt.
+ */
+export async function requestWorkoutDayReminder(focusLabels: string[]): Promise<void> {
+  try {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (window.Notification.permission === "default") {
+      const result = await window.Notification.requestPermission();
+      if (result !== "granted") return;
+    }
+    notifyWorkoutDay(focusLabels);
+  } catch {
+    // Notifications unavailable — ignore
+  }
+}
+  /**
+ * Show a one-per-day system notification when it's a planned training day.
+ * No-ops when notification permission is not granted.
+ */
+export function notifyWorkoutDay(focusLabels: string[]): void {
+  try {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (window.Notification.permission !== "granted") return;
+
+    const today = new Date().toDateString();
+    if (localStorage.getItem(WORKOUT_REMINDER_KEY) === today) return;
+    localStorage.setItem(WORKOUT_REMINDER_KEY, today);
+
+    const focus = focusLabels.length
+      ? ` Today: ${focusLabels.join(" + ")}.`
+      : "";
+    const n = new window.Notification("Yono — training day 🏋️", {
+      body: `Time to hit the gym.${focus}`,
+      tag: "yono-workout-day",
+    });
+    n.onclick = () => {
+      window.focus();
+      n.close();
+    };
+  } catch {
+    // Notifications unavailable — ignore
+  }
+}

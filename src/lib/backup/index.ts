@@ -27,6 +27,8 @@ export async function exportBackup(): Promise<YonoBackup> {
     aiMemories,
     chatMessages,
     chatSummaries,
+    weeklyPlans,
+    bodyStats,
   ] = await Promise.all([
     db.profiles.toArray(),
     db.gyms.toArray(),
@@ -40,6 +42,8 @@ export async function exportBackup(): Promise<YonoBackup> {
     db.aiMemories.toArray(),
     db.chatMessages.toArray(),
     db.chatSummaries.toArray(),
+    db.weeklyPlans.toArray(),
+    db.bodyStats.toArray(),
   ]);
 
   const backup: YonoBackup = {
@@ -59,6 +63,8 @@ export async function exportBackup(): Promise<YonoBackup> {
       aiMemories,
       chatMessages,
       chatSummaries,
+      weeklyPlans,
+      bodyStats,
     },
   };
 
@@ -110,6 +116,8 @@ const BackupSchema = z.object({
     aiMemories: z.array(z.unknown()),
     chatMessages: z.array(z.unknown()),
     chatSummaries: z.array(z.unknown()),
+    weeklyPlans: z.array(z.unknown()).optional(),
+    bodyStats: z.array(z.unknown()).optional(),
   }),
 });
 
@@ -181,6 +189,8 @@ export async function importBackupReplace(backup: YonoBackup): Promise<void> {
       db.aiMemories,
       db.chatMessages,
       db.chatSummaries,
+      db.weeklyPlans,
+      db.bodyStats,
       db.backupMetadata,
     ],
     async () => {
@@ -198,6 +208,8 @@ export async function importBackupReplace(backup: YonoBackup): Promise<void> {
         db.aiMemories.clear(),
         db.chatMessages.clear(),
         db.chatSummaries.clear(),
+        db.weeklyPlans.clear(),
+        db.bodyStats.clear(),
       ]);
 
       // Import all data
@@ -215,6 +227,8 @@ export async function importBackupReplace(backup: YonoBackup): Promise<void> {
         d.aiMemories.length > 0 && db.aiMemories.bulkAdd(d.aiMemories as never[]),
         d.chatMessages.length > 0 && db.chatMessages.bulkAdd(d.chatMessages as never[]),
         d.chatSummaries.length > 0 && db.chatSummaries.bulkAdd(d.chatSummaries as never[]),
+        d.weeklyPlans && d.weeklyPlans.length > 0 && db.weeklyPlans.bulkAdd(d.weeklyPlans as never[]),
+        d.bodyStats && d.bodyStats.length > 0 && db.bodyStats.bulkAdd(d.bodyStats as never[]),
       ]);
 
       // Update backup metadata
@@ -256,6 +270,8 @@ export async function importBackupMerge(backup: YonoBackup): Promise<{
       db.aiMemories,
       db.chatMessages,
       db.chatSummaries,
+      db.weeklyPlans,
+      db.bodyStats,
       db.backupMetadata,
     ],
     async () => {
@@ -272,6 +288,11 @@ export async function importBackupMerge(backup: YonoBackup): Promise<{
         { table: db.aiMemories, data: backup.data.aiMemories },
         { table: db.chatMessages, data: backup.data.chatMessages },
         { table: db.chatSummaries, data: backup.data.chatSummaries },
+        {
+          table: db.weeklyPlans,
+          data: backup.data.weeklyPlans ?? [],
+        },
+        { table: db.bodyStats, data: backup.data.bodyStats ?? [] },
       ];
 
       for (const { table, data } of tables) {

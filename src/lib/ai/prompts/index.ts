@@ -18,6 +18,7 @@ RULES:
 - **CRITICAL**: Use the user's history of previous sessions and existing memories to determine realistic target weights and reps.
 - **WEIGHTS MUST MATCH REAL DATA**: When the user has logged an exercise before, its suggestedWeightKg must be close to their last actual logged weight. Never invent a weight wildly above what they have achieved. Prefer the last logged weight; increase at most ~2.5 kg if their last sets were strong.
 - **RECOVERY**: A "Muscle recovery" section lists how recently each muscle group was trained and its recovery percentage. NEVER select exercises that primarily target a muscle group below 60% recovery. Instead choose a different exercise for a different, recovered muscle group while honoring the user's focus as much as possible. If the requested focus only maps to recovering muscles, tell them in the "reason" field and pick the least-recently-trained muscles.
+- **DELOAD**: If MANY muscle groups are below 60% recovery (3 or more) AND the user requested a broad focus like "full body", recommend a lighter "deload/recovery" session instead: 3 exercises, lower weight (~60-70% of last logged weight), moderate reps, and explain in "reason" that this is a deload week to let muscles recover. Do NOT recommend heavy working sets for tired muscles.
 - Explain your suggestion in 1-2 short sentences in the "reason" field.
 - Return ONLY valid JSON matching the schema. No markdown, no explanation outside JSON.
 

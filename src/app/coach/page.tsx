@@ -11,6 +11,7 @@ import { useSpeechRecognition, SPEECH_LANGUAGES, type SpeechLang } from "@/lib/s
 import db from "@/db/database";
 import { useLiveQuery } from "dexie-react-hooks";
 import { getCopy } from "@/data/yono-copy";
+import { getMuscleRecoveryRows } from "@/lib/recovery";
 
 interface Message {
   id: string;
@@ -140,6 +141,12 @@ export default function CoachPage() {
 
       const chatSummaryRecord = await db.chatSummaries.get("main-coach-summary");
 
+      // Muscle recovery so Yono knows which muscles are ready to train today.
+      const allSets = await db.workoutSets.toArray();
+      const muscleRecovery = getMuscleRecoveryRows(allSets, Date.now()).map(
+        ({ label, pct, status }) => ({ label, pct, status })
+      );
+
       // Recent messages for context (last 8)
       const recentMessages = localMessages
         .slice(-8)
@@ -154,6 +161,7 @@ export default function CoachPage() {
           : undefined,
         memories: memories ?? [],
         exerciseContext: [],
+        muscleRecovery,
         recentSessions: recentSessionsContext,
       };
 

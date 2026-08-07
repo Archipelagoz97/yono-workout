@@ -178,6 +178,31 @@ export interface BackupMetadata {
   updatedAt: number;
 }
 
+export interface WeeklyPlan {
+  id: "main-weekly-plan";
+  trainingDays: Array<{
+    dayIndex: number; // 0..6 (0 = Monday)
+    focus: string[];
+    presentAt?: number[][]; // weekly times [hour, minute]
+  }>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface BodyStat {
+  id: number;
+  date: number; // day timestamp (start of day)
+  bodyWeightKg?: number;
+  waistCm?: number;
+  chestCm?: number;
+  shouldersCm?: number;
+  armsCm?: number;
+  thighsCm?: number;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 // Backup file format
 export interface YonoBackup {
   schemaVersion: 1;
@@ -196,6 +221,8 @@ export interface YonoBackup {
     aiMemories: AiMemory[];
     chatMessages: ChatMessage[];
     chatSummaries: ChatSummary[];
+    weeklyPlans?: WeeklyPlan[];
+    bodyStats?: BodyStat[];
   };
 }
 

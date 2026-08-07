@@ -70,6 +70,16 @@ export function buildCoachMessages(
     });
   }
 
+  if (data.muscleRecovery && data.muscleRecovery.length > 0) {
+    const recoveryStr = data.muscleRecovery
+      .map((r) => `- ${r.label}: ${r.pct}% recovered (${r.status})`)
+      .join("\n");
+    messages.push({
+      role: "system",
+      content: `Current muscle recovery (percent recovered):\n${recoveryStr}\n\nWhen suggesting a workout or answering about what to train today, prefer muscle groups at 100% recovery and avoid groups below 60%.`,
+    });
+  }
+
   if (data.memories.length > 0) {
     const memoriesStr = data.memories
       .map((m: unknown) => (m as { content: string }).content)

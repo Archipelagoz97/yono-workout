@@ -283,6 +283,15 @@ export const CoachRequestSchema = z.object({
     .optional(),
   memories: z.array(z.unknown()),
   exerciseContext: z.array(z.unknown()).optional(),
+  muscleRecovery: z
+    .array(
+      z.object({
+        label: z.string(),
+        pct: z.number().min(0).max(100),
+        status: z.enum(["fresh", "recovering", "recent"]),
+      })
+    )
+    .optional(),
   recentSessions: z
     .array(
       z.object({

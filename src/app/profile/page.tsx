@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
-import { DownloadIcon, UploadIcon, DatabaseIcon, ShieldIcon, MoonIcon, SunIcon, BrainIcon, TrashIcon, ChevronRightIcon, PencilIcon, UserIcon } from "lucide-react";
+import { DownloadIcon, UploadIcon, DatabaseIcon, ShieldIcon, MoonIcon, SunIcon, BrainIcon, TrashIcon, ChevronRightIcon, PencilIcon, UserIcon, BellIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +27,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import db from "@/db/database";
 import { exportBackup, downloadBackup, readBackupFile, validateAndParseBackup, importBackupReplace, importBackupMerge } from "@/lib/backup";
 import { getTheme, setTheme } from "@/lib/storage";
+import { requestWorkoutDayReminder } from "@/lib/notifications";
 import { YonoAnimation } from "@/components/yono/YonoAnimation";
 import type { Profile } from "@/types";
 
@@ -41,6 +42,8 @@ const PERSONALITY_OPTIONS = [
   { id: "balanced", label: "Balanced", emoji: "😊" },
   { id: "playful", label: "Playful", emoji: "🎉" },
 ] as const;
+
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export default function ProfilePage() {
   const [isExporting, setIsExporting] = useState(false);
@@ -61,12 +64,72 @@ export default function ProfilePage() {
     preferredDistanceUnit: "km" as "km" | "mi",
   });
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [selectedDays, setSelectedDays] = useState<Set<number>>(new Set());
 
   const profile = useLiveQuery(() => db.profiles.get("main-user"), []);
   const memories = useLiveQuery(() => db.aiMemories.toArray(), []);
   const sessionCount = useLiveQuery(() => db.workoutSessions.where("status").equals("completed").count(), []);
   const setCount = useLiveQuery(() => db.workoutSets.count(), []);
   const backupMeta = useLiveQuery(() => db.backupMetadata.get("backup-status"), []);
+  const weeklyPlan = useLiveQuery(() => db.weeklyPlans.get("main-weekly-plan"), []);
+  const bodyStats = useLiveQuery(
+    () => db.bodyStats.orderBy("date").reverse().limit(8).toArray(),
+    []
+  );
+
+  const savedDays = useMemo(
+    () => new Set((weeklyPlan?.trainingDays ?? []).map((d) => d.dayIndex)),
+    [weeklyPlan]
+  );
+
+  const splitSuggestions = useMemo(() => {
+    const days = selectedDays.size > 0 ? [...selectedDays] : [...savedDays];
+    const sorted = days.sort((a, b) => a - b);
+    const n = sorted.length;
+    if (n === 0) return [];
+    const sets =
+      n === 1 ? [["Full body"]] :
+      n === 2 ? [["Upper body"], ["Lower body"]] :
+      n === 3 ? [["Push"], ["Pull"], ["Legs"]] :
+      n === 4 ? [["Upper"], ["Lower"], ["Push"], ["Pull"]] :
+      n === 5 ? [["Chest"], ["Back"], ["Legs"], ["Shoulders + Arms"], ["Cardio + Core"]] :
+      n === 6 ? [["Upper A"], ["Lower A"], ["Push"], ["Pull"], ["Upper B"], ["Lower B"]] :
+      [["Push"], ["Pull"], ["Legs"], ["Cardio"], ["Upper"], ["Lower"], ["Rest"]];
+    return sorted.slice(0, sets.length).map((dayIdx, i) => ({
+      dayIndex: dayIdx,
+      focus: sets[i] ?? ["Full body"],
+    }));
+  }, [selectedDays, savedDays]);
+
+  const toggleDay = (idx: number) => {
+    setSelectedDays((prev) => {
+      let next = new Set(prev);
+      if (prev.size === 0) next = new Set(savedDays);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
+
+  const saveWeeklyPlan = async () => {
+    const days = [...selectedDays].sort((a, b) => a - b);
+    const now = Date.now();
+    const trainingDays = days.map((d) => {
+      const matched = splitSuggestions.find((s) => s.dayIndex === d);
+      return {
+        dayIndex: d,
+        focus: matched?.focus ?? ["Full body"],
+        presentAt: [[18, 0]],
+      };
+    });
+    await db.weeklyPlans.put({
+      id: "main-weekly-plan",
+      trainingDays,
+      createdAt: weeklyPlan?.createdAt ?? now,
+      updatedAt: now,
+    });
+    setSelectedDays(new Set());
+  };
 
   const openEditProfile = () => {
     if (!profile) return;
@@ -231,6 +294,138 @@ export default function ProfilePage() {
           </Card>
         </motion.div>
       )}
+
+      {/* Weekly Plan */}
+      <motion.div
+        className="px-4 mb-6"
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-30px" }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+      >
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+          Weekly plan
+        </h2>
+        <Card className="p-4">
+          <p className="text-xs text-muted-foreground mb-3">
+            Pick your training days and Yono suggests a weekly split.
+          </p>
+          <div className="grid grid-cols-7 gap-1.5 mb-3">
+            {DAY_NAMES.map((d, i) => {
+              const active =
+                selectedDays.has(i) || (selectedDays.size === 0 && savedDays.has(i));
+              return (
+                <button
+                  key={d}
+                  onClick={() => toggleDay(i)}
+                  className={`py-2 rounded-xl text-xs font-semibold border transition-all ${
+                    active
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-muted border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {d}
+                </button>
+              );
+            })}
+          </div>
+
+          {splitSuggestions.length > 0 && (
+            <div className="mb-3 space-y-1.5">
+              {splitSuggestions.map((s) => (
+                <div
+                  key={s.dayIndex}
+                  className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2"
+                >
+                  <span className="text-xs font-semibold text-foreground">
+                    {DAY_NAMES[s.dayIndex]}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {s.focus.join(" + ")}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <Button
+            id="btn-save-weekly-plan"
+            onClick={saveWeeklyPlan}
+            disabled={selectedDays.size === 0}
+            className="w-full rounded-xl"
+          >
+            {selectedDays.size > 0
+              ? `Save plan (${selectedDays.size} days)`
+              : weeklyPlan
+                ? "Plan saved — tap days to change"
+                : "Select days to build your split"}
+          </Button>
+
+          <Button
+            id="btn-enable-reminders"
+            variant="ghost"
+            size="sm"
+            className="w-full rounded-xl text-xs"
+            onClick={async () => {
+              await requestWorkoutDayReminder(
+                (weeklyPlan?.trainingDays ?? []).map((d) => d.focus[0] ?? "Workout")
+              );
+            }}
+            disabled={!weeklyPlan || weeklyPlan.trainingDays.length === 0}
+          >
+            <BellIcon className="w-3.5 h-3.5 mr-1.5" />
+            Turn on workout-day reminders
+          </Button>
+        </Card>
+      </motion.div>
+
+      {/* Body stats */}
+      <motion.div
+        className="px-4 mb-6"
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true, margin: "-30px" }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+      >
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+          Body stats
+        </h2>
+        <Card className="divide-y divide-border mb-3">
+          <BodyStatForm unit={profile?.preferredWeightUnit ?? "kg"} />
+          {bodyStats && bodyStats.length > 0 ? (
+            bodyStats.map((s) => (
+              <div
+                key={s.id}
+                className="px-4 py-3 flex items-center justify-between"
+              >
+                <span className="text-sm text-muted-foreground">
+                  {new Date(s.date).toLocaleDateString("en", {
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </span>
+                <span className="text-sm font-semibold text-foreground tabular-nums">
+                  {s.bodyWeightKg != null
+                    ? `${formatBodyWeight(s.bodyWeightKg, profile?.preferredWeightUnit ?? "kg")}`
+                    : ""}
+                  {s.waistCm != null
+                    ? s.bodyWeightKg != null
+                      ? ` · ${formatCm(s.waistCm)}`
+                      : `${formatCm(s.waistCm)}`
+                    : ""}
+                </span>
+              </div>
+            ))
+          ) : (
+            <p className="px-4 py-3 text-xs text-muted-foreground">
+              No body stats yet — add your weight or waist to track trends.
+            </p>
+          )}
+        </Card>
+        <p className="text-[10px] text-muted-foreground">
+          Weight helps Yono correlate strength gains over time. Log daily for the clearest trend.
+        </p>
+      </motion.div>
 
       {/* Storage & Backup */}
       <motion.div
@@ -650,6 +845,102 @@ export default function ProfilePage() {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function formatBodyWeight(kg: number, unit: "kg" | "lb"): string {
+  const v = unit === "lb" ? kg * 2.20462 : kg;
+  return `${Math.round(v * 10) / 10} ${unit}`;
+}
+
+function formatCm(cm: number): string {
+  return `${Math.round(cm)} cm`;
+}
+
+function BodyStatForm({ unit }: { unit: "kg" | "lb" }) {
+  const [weight, setWeight] = useState("");
+  const [waist, setWaist] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!weight.trim() && !waist.trim()) return;
+    setSaving(true);
+    try {
+      const now = Date.now();
+      const startOfDay = new Date(now);
+      startOfDay.setHours(0, 0, 0, 0);
+      const day = startOfDay.getTime();
+
+      const existing = await db.bodyStats
+        .where("date")
+        .equals(day)
+        .first()
+        .catch(() => undefined);
+
+      const weightKg = weight.trim()
+        ? unit === "lb"
+          ? parseFloat(weight) / 2.20462
+          : parseFloat(weight)
+        : undefined;
+      const waistCm = waist.trim() ? parseFloat(waist) : undefined;
+
+      if (existing) {
+        await db.bodyStats.update(existing.id, {
+          bodyWeightKg: weightKg ?? existing.bodyWeightKg,
+          waistCm: waistCm ?? existing.waistCm,
+          updatedAt: now,
+        });
+      } else {
+        await db.bodyStats.add({
+          id: day,
+          date: day,
+          bodyWeightKg: weightKg,
+          waistCm: waistCm,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      setWeight("");
+      setWaist("");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="p-4 space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label className="text-xs text-muted-foreground">Weight ({unit})</Label>
+          <Input
+            inputMode="decimal"
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            placeholder="e.g. 72"
+            className="mt-1.5"
+          />
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground">Waist (cm)</Label>
+          <Input
+            inputMode="decimal"
+            value={waist}
+            onChange={(e) => setWaist(e.target.value)}
+            placeholder="e.g. 82"
+            className="mt-1.5"
+          />
+        </div>
+      </div>
+      <Button
+        id="btn-save-body-stat"
+        variant="outline"
+        onClick={handleSave}
+        disabled={saving || (!weight.trim() && !waist.trim())}
+        className="w-full rounded-xl"
+      >
+        {saving ? "Saving..." : "Log today"}
+      </Button>
     </div>
   );
 }

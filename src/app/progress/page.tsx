@@ -308,6 +308,51 @@ export default function ProgressPage() {
       trends.find((t) => t.exerciseId === selectedExerciseId)) ||
     trends[0];
 
+  // Per-exercise insight: direction + something to double down on.
+  const selectedInsight = useMemo(() => {
+    if (!selectedTrend || selectedTrend.sessions.length < 2) return null;
+    const pts = selectedTrend.sessions;
+    const recent = pts.slice(-3);
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const totalChange = ((last.est1RM - first.est1RM) / (first.est1RM || 1)) * 100;
+    const recentChange =
+      ((recent[recent.length - 1].est1RM - recent[0].est1RM) /
+        (recent[0].est1RM || 1)) *
+      100;
+
+    let direction: "up" | "flat" | "down";
+    if (recentChange > 1) direction = "up";
+    else if (recentChange < -1) direction = "down";
+    else direction = "flat";
+
+    const total = Math.round(totalChange);
+    const recentSigned = Math.round(recentChange);
+
+    if (direction === "up") {
+      if (total > 15) {
+        return {
+          tone: "accent" as const,
+          text: `You're up ${total}% overall on this lift. To keep climbing, add ~2.5kg and stay at the same reps, or stay at weight and push reps.`,
+        };
+      }
+      return {
+        tone: "primary" as const,
+        text: `Trending up (${recentSigned >= 0 ? "+" : ""}${recentSigned}% over last 3 sessions). Steady like this and you&apos;ll beat your peak soon.`,
+      };
+    }
+    if (direction === "down") {
+      return {
+        tone: "destructive" as const,
+        text: `Off your best in the last ${recent.length} ${recent.length === 1 ? "session" : "sessions"} (${recentSigned}%). Could be fatigue — consider a lighter session or more rest before retesting.`,
+      };
+    }
+    return {
+      tone: "secondary" as const,
+      text: `Strength has been steady. To grow it, add a small weight step or a couple of reps — otherwise this plateaus.`,
+    };
+  }, [selectedTrend]);
+
   if (!stats) {
     return (
       <div className="min-h-dvh yono-gradient content-with-nav">
@@ -502,6 +547,29 @@ export default function ProgressPage() {
                   gradually.
                 </p>
               </Card>
+
+              {/* Insight callout */}
+              {selectedInsight && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className={`mt-3 rounded-2xl px-4 py-3 border ${
+                    selectedInsight.tone === "destructive"
+                      ? "bg-destructive/10 border-destructive/30"
+                      : selectedInsight.tone === "accent"
+                        ? "bg-accent/10 border-accent/30"
+                        : selectedInsight.tone === "secondary"
+                          ? "bg-secondary/10 border-secondary/30"
+                          : "bg-primary/10 border-primary/30"
+                  }`}
+                >
+                  <p className="text-xs leading-relaxed text-foreground">
+                    <span className="font-semibold">Yono&apos;s take: </span>
+                    {selectedInsight.text}
+                  </p>
+                </motion.div>
+              )}
 
               {/* Rep records */}
               {selectedTrend.repPRs.length > 0 && (

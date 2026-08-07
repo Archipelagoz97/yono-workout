@@ -16,6 +16,8 @@ import {
   BookmarkIcon,
   Link2Icon,
   XIcon,
+  TrendingUpIcon,
+  TrendingDownIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -34,7 +36,7 @@ import db from "@/db/database";
 import { useLiveQuery } from "dexie-react-hooks";
 import { exercises as exerciseCatalog } from "@/data/exercises.compact";
 import { saveActiveWorkoutState, getActiveWorkoutState, clearActiveWorkoutState } from "@/lib/storage";
-import { getProgressionAdvice } from "@/lib/progression";
+import { getProgressionAdvice, estimateOneRepMax } from "@/lib/progression";
 import { notifyRestComplete, unlockAudio } from "@/lib/notifications";
 import { kgToDisplay, displayToKg, roundToPlate, formatWeight } from "@/lib/units";
 import { ExerciseDetailsDialog } from "@/components/workout/ExerciseDetailsDialog";
@@ -187,6 +189,105 @@ export default function WorkoutPage() {
         .toArray(),
     [sessionId]
   );
+
+  // Session vs previous session comparison: for each exercise logged today,
+  // find the most recent prior workout that also included it and compare the
+  // best working set (est. 1RM).
+  const sessionComparison = useLiveQuery(async () => {
+    if (!allSessionSets || allSessionSets.length === 0) return [];
+    const current = new Map<string, { weightKg: number; reps: number; est1RM: number }>();
+    for (const s of allSessionSets) {
+      if (s.setType === "warmup") continue;
+      const est = estimateOneRepMax(s.weightKg!, s.reps!);
+      const existing = current.get(s.exerciseId);
+      if (!existing || est > existing.est1RM) {
+        current.set(s.exerciseId, { weightKg: s.weightKg!, reps: s.reps!, est1RM: est });
+      }
+    }
+    if (current.size === 0) return [];
+
+    const priorSessions = (
+      await db.workoutSessions
+        .where("status")
+        .equals("completed")
+        .filter((s) => s.id !== sessionId && !!s.completedAt)
+        .toArray()
+    ).sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+
+    const exerciseIds = [...current.keys()];
+    const priorSets = await db.workoutSets
+      .where("exerciseId")
+      .anyOf(exerciseIds)
+      .filter(
+        (s) =>
+          s.sessionId !== sessionId &&
+          s.setType !== "warmup" &&
+          s.weightKg != null &&
+          s.reps != null
+      )
+      .toArray();
+
+    // Best prior set per sessionId + exerciseId
+    const priorBest = new Map<string, { weightKg: number; reps: number; est1RM: number }>();
+    const sessionDate = new Map<string, number>();
+    for (const s of priorSets) {
+      const key = `${s.sessionId}:${s.exerciseId}`;
+      const est = estimateOneRepMax(s.weightKg!, s.reps!);
+      const existing = priorBest.get(key);
+      if (!existing || est > existing.est1RM) {
+        priorBest.set(key, { weightKg: s.weightKg!, reps: s.reps!, est1RM: est });
+      }
+      const d = priorSessions.find((p) => p.id === s.sessionId)?.completedAt;
+      if (d) sessionDate.set(s.sessionId, d);
+    }
+
+    // For each exercise, walk prior sessions newest→oldest until we find one
+    // that has data for it.
+    const rows: Array<{
+      exerciseId: string;
+      name: string;
+      current: { weightKg: number; reps: number; est1RM: number };
+      previous: { weightKg: number; reps: number; est1RM: number };
+      deltaPct: number;
+    }> = [];
+    for (const [exerciseId, cur] of current) {
+      for (const p of priorSessions) {
+        const prev = priorBest.get(`${p.id}:${exerciseId}`);
+        if (prev) {
+          const deltaPct = ((cur.est1RM - prev.est1RM) / (prev.est1RM || 1)) * 100;
+          rows.push({
+            exerciseId,
+            name: exerciseMap.get(exerciseId)?.name ?? exerciseId,
+            current: cur,
+            previous: prev,
+            deltaPct: Math.round(deltaPct),
+          });
+          break;
+        }
+      }
+    }
+    return rows;
+  }, [allSessionSets, sessionId]);
+
+  // Junk-volume guard: exercises whose work sets exceeded the planned target
+  // AND whose strength (est. 1RM) did not beat the previous session. Extra sets
+  // with no progress add fatigue without adding strength.
+  const junkVolume = useMemo(() => {
+    if (!sessionComparison || !sessionComparison.length) return [];
+    const targets = new Map(
+      (sessionExercises ?? []).map((se) => [se.exerciseId, se.targetSets])
+    );
+    const counts = new Map<string, number>();
+    for (const s of allSessionSets ?? []) {
+      if (s.setType === "warmup") continue;
+      counts.set(s.exerciseId, (counts.get(s.exerciseId) ?? 0) + 1);
+    }
+    return sessionComparison.filter((row) => {
+      const target = targets.get(row.exerciseId) ?? 3;
+      const done = counts.get(row.exerciseId) ?? 0;
+      return done > target && row.deltaPct <= 0;
+    });
+  }, [sessionComparison, sessionExercises, allSessionSets]);
 
   const totalVolumeKg =
     allSessionSets?.reduce((sum, s) => sum + (s.weightKg ?? 0) * (s.reps ?? 0), 0) ?? 0;
@@ -1443,6 +1544,66 @@ export default function WorkoutPage() {
                     );
                   })}
                 </div>
+              </div>
+            )}
+
+            {/* Session comparison vs last time */}
+            {(sessionComparison ?? []).length > 0 && (
+              <div className="mt-7 w-full">
+                <p className="mb-2.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Vs last time you did these
+                </p>
+                <div className="space-y-2">
+                  {(sessionComparison ?? []).map((row) => {
+                    const up = row.deltaPct >= 1;
+                    const down = row.deltaPct <= -1;
+                    const ColorIcon = up ? TrendingUpIcon : down ? TrendingDownIcon : MinusIcon;
+                    return (
+                      <div
+                        key={row.exerciseId}
+                        className="flex items-center justify-between gap-3 rounded-xl bg-muted/50 px-3.5 py-3"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-foreground">
+                            {row.name}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {formatWeight(row.current.weightKg, weightUnit)} × {row.current.reps} now
+                            · {formatWeight(row.previous.weightKg, weightUnit)} × {row.previous.reps} before
+                          </p>
+                        </div>
+                        <span
+                          className={`shrink-0 flex items-center gap-1 text-sm font-semibold tabular-nums ${
+                            up
+                              ? "text-primary"
+                              : down
+                                ? "text-destructive"
+                                : "text-muted-foreground"
+                          }`}
+                        >
+                          <ColorIcon className="w-4 h-4" />
+                          {row.deltaPct > 0 ? "+" : ""}
+                          {row.deltaPct}%
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+                        {/* Junk volume warning */}
+            {junkVolume.length > 0 && (
+              <div className="mt-7 w-full rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+                <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <TrendingDownIcon className="w-4 h-4 text-amber-500" />
+                  Extra sets without progress
+                </p>
+                <p className="mt-1.5 text-xs leading-relaxed text-foreground/80">
+                  {junkVolume.map((j) => j.name).join(", ")} had more work sets than
+                  planned but didn&apos;t beat your previous best. Extra sets here add
+                  fatigue, not strength — next time add weight/reps instead of more sets.
+                </p>
               </div>
             )}
 

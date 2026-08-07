@@ -36,6 +36,7 @@ import { getTemplates, deleteTemplate, type WorkoutTemplate } from "@/lib/templa
 import { exercises } from "@/data/exercises.compact";
 import { getFallbackExercises } from "@/lib/progression";
 import { getMuscleRecoveryRows, getRecoveringLabels } from "@/lib/recovery";
+import { notifyWorkoutDay } from "@/lib/notifications";
 import { kgToDisplay, type WeightUnit } from "@/lib/units";
 import type { WorkoutSession } from "@/types";
 import type { BulkImportLogResult } from "@/lib/ai/schemas";
@@ -282,6 +283,22 @@ export default function TodayPage() {
 
   const gym = useLiveQuery(() => db.gyms.get(gymId ?? "ftl"), [gymId]);
   const profile = useLiveQuery(() => db.profiles.get("main-user"));
+  const weeklyPlan = useLiveQuery(() => db.weeklyPlans.get("main-weekly-plan"), []);
+
+  // Once per day, if today is a planned training day, remind the user.
+  useEffect(() => {
+    if (!weeklyPlan || weeklyPlan.trainingDays.length === 0) return;
+    if (typeof window === "undefined") return;
+    // Only fire if the user already granted notification permission —
+    // the permission prompt is user-initiated to avoid surprise prompts.
+    if (!("Notification" in window) || window.Notification.permission !== "granted") {
+      return;
+    }
+    const dayIndex = (new Date().getDay() + 6) % 7; // 0 = Monday
+    const todayPlan = weeklyPlan.trainingDays.find((d) => d.dayIndex === dayIndex);
+    if (!todayPlan) return;
+    notifyWorkoutDay(todayPlan.focus);
+  }, [weeklyPlan]);
 
   const nowTs = useState(() => Date.now())[0];
 
@@ -524,21 +541,49 @@ export default function TodayPage() {
     const count =
       selectedTime === "20" ? 3 : selectedTime === "60" ? 6 : 4;
 
+    // Deload detection: if the broad-focus day AND most muscles are still
+    // recovering, suggest a lighter session instead of heavy working sets.
+    const isBroadFocus =
+      ["full body", "upper body", "lower body"].includes(focus[0]);
+    const shouldDeload = isBroadFocus && recoveringLabels.size >= 3;
+
+    const selectingFocus = shouldDeload ? ["recovery"] : focus;
     const selected = getFallbackExercises(
-      focus,
+      selectingFocus,
       availableCodes,
       exercises,
       exerciseHistory,
-      count,
+      shouldDeload ? 3 : count,
       recoveringLabels
     );
 
+    const deloadSuggestion = shouldDeload
+      ? selected.map((ex) => {
+          // ~65% of last weight, moderate reps — a deload keeps volume low.
+          const lastW = exerciseHistory.get(ex.exerciseId)?.lastWeightKg;
+          return {
+            ...ex,
+            targetSets: 3,
+            suggestedWeightKg:
+              lastW != null ? Math.round(lastW * 0.65 * 4) / 4 : undefined,
+            notes: "Deload set — keep it light.",
+          };
+        })
+      : selected;
+
     const offlineSuggestion = {
-      sessionName: ALL_FOCUS.find((f) => f.id === selectedFocus)?.label ?? "Workout",
-      reason:
-        "DeepSeek is unavailable. Yono created a simple workout using your exercise catalog.",
-      estimatedMinutes: selectedTime ? parseInt(selectedTime) : 40,
-      exercises: selected,
+      sessionName: shouldDeload
+        ? "Deload / Recovery"
+        : (ALL_FOCUS.find((f) => f.id === selectedFocus)?.label ?? "Workout"),
+      reason: shouldDeload
+        ? "Several muscle groups are still recovering. Yono recommended a light deload session (~65% of your usual weights) so you can keep moving without overtraining. Tap Generate again when you're fresh for a full session."
+        : "DeepSeek is unavailable. Yono created a simple workout using your exercise catalog.",
+      estimatedMinutes: shouldDeload
+        ? 20
+        : selectedTime
+          ? parseInt(selectedTime)
+          : 40,
+      exercises: shouldDeload ? deloadSuggestion : selected,
       isOffline: true,
     };
 
