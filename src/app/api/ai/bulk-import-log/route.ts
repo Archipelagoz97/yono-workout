@@ -11,7 +11,7 @@ import { ZodError } from "zod";
 export async function POST(req: NextRequest) {
   try {
     const contentLength = req.headers.get("content-length");
-    if (contentLength && parseInt(contentLength) > 10000) {
+    if (contentLength && parseInt(contentLength) > 20000) {
       return NextResponse.json({ error: "Request too large" }, { status: 413 });
     }
 
@@ -32,17 +32,29 @@ export async function POST(req: NextRequest) {
           { role: "user", content: userMessage },
         ],
         temperature: 0.1,
-        maxTokens: 2048,
+        maxTokens: 4096,
       },
       (raw) => BulkImportLogResponseSchema.parse(raw)
     );
 
     const validIds = new Set(exercises.map((e) => e.id));
-    for (const ex of result.exercises) {
-      if (ex.exerciseId !== "other" && !validIds.has(ex.exerciseId)) {
-        result.confidence = Math.min(result.confidence, 0.5);
+    let overallConfidence = result.confidence;
+    for (const session of result.sessions) {
+      let sessionHasInvalid = false;
+      for (const ex of session.exercises) {
+        if (ex.exerciseId !== "other" && !validIds.has(ex.exerciseId)) {
+          overallConfidence = Math.min(overallConfidence, 0.5);
+          sessionHasInvalid = true;
+        }
+      }
+      if (sessionHasInvalid) {
+        session.confidence = Math.min(
+          session.confidence ?? result.confidence,
+          0.5
+        );
       }
     }
+    result.confidence = overallConfidence;
 
     return NextResponse.json(result);
   } catch (error) {

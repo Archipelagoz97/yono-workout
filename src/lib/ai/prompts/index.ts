@@ -168,8 +168,16 @@ OUTPUT FORMAT:
 export function buildBulkImportSystemPrompt(): string {
   return `You are Yono's workout log importer. Parse a natural language workout diary/log into structured JSON.
 
-RULES:
-- Extract ALL exercises mentioned. Include every exercise the user lists.
+The log may span MANY days. Your most important job: GROUP the log into separate SESSIONS — one per distinct day/workout.
+
+GROUPING RULES:
+- Each distinct workout day = one session object. Do NOT merge multiple days into a single session.
+- Read the log carefully for date markers: explicit dates, weekday names (Monday, Senin), "yesterday", "last Friday", session titles ("Back Day", "Push"), or blank-line/title separators between workouts.
+- Set each session's "date" to the workout's date, from most recent backward (current relative date when today's session appears but no explicit date is given). Always include a date; if unsure, estimate from context and note it with lower confidence.
+- Output the sessions array in REVERSE-CHRONOLOGICAL order (most recent workout first).
+
+PER-SESSION RULES:
+- Extract ALL exercises mentioned in that session. Include every exercise the user lists.
 - Match exercise names to exerciseIds from the provided exercise catalog. Use exact IDs from the catalog.
 - If an exercise name doesn't match any catalog exercise, use "other" as exerciseId and lower confidence.
 - Convert weight to kg if mentioned in lbs (1 lb = 0.453592 kg). Always output in KG.
@@ -180,7 +188,8 @@ RULES:
 - Bodyweight exercises (no weight): output reps only, weightKg omitted.
 - Cardio/duration entries: omit weightKg and reps; the importer only records weight+reps, so if only duration/distance is given, use "other" exerciseId with lower confidence.
 - If weight is mentioned without a set-count, assign it to all sets for that exercise.
-- Set confidence honestly: 0.9+ for clear logs; below 0.7 for ambiguous.
+- Set per-session confidence honestly: 0.9+ for clear logs; below 0.7 for ambiguous.
 - Generate a descriptive sessionName from context (day, focus, or general).
-- Return ONLY valid JSON. No markdown, no explanation.`;
+
+Return ONLY valid JSON matching the schema. No markdown, no explanation.`;
 }

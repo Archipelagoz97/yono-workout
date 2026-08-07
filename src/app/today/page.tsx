@@ -86,9 +86,10 @@ const EQUIPMENT_OPTIONS = [
 type GenerationState = "idle" | "loading" | "success" | "error" | "offline";
 
 // Reverse prompt: paste into an external AI so its log output matches Yono's importer.
-const REVERSE_IMPORT_PROMPT = `You are my workout log assistant. Write today's session so it can be machine-parsed. Use this exact format:
+const REVERSE_IMPORT_PROMPT = `You are my workout log assistant. Write out my recent workout history so it can be machine-parsed. You may include multiple days. Use this exact format, one block per workout day:
 
-Session: <Name> (<day or focus>, <date if known>)
+Date: <date or weekday>
+Session: <Name> (<day or focus>)
 
 Exercises:
 1. <Exercise name> — <sets> sets x <reps> reps @ <weight>kg
@@ -97,6 +98,7 @@ Exercises:
 Rules:
 - Use the real exercise names (e.g. "Lat Pulldown", "Bench Press", "Treadmill").
 - Always specify weight in kg (convert lb to kg: 1 lb = 0.45 kg).
+- Put a "Date:" line before each distinct workout day so they're separated.
 - For sets with different weights/reps, write each set separately, e.g. "3x10 @ 30kg, 3x8 @ 35kg".
 - Bodyweight exercises: write only sets x reps (no weight), e.g. "3x12".
 - Cardio: write duration and distance, e.g. "20 min @ 5 km".
@@ -684,54 +686,85 @@ export default function TodayPage() {
 
   const handleConfirmImport = async () => {
     if (!importResult || !gymId) return;
+    const DAY = 24 * 60 * 60 * 1000;
     const now = Date.now();
-    const sessionId = crypto.randomUUID();
+
+    const tsForSession = (() => {
+      const cache = new Map<string, number>();
+      let lastKnownTs = now;
+      let backfill = 0;
+      return (date?: string): number => {
+        if (date) {
+          if (!cache.has(date)) {
+            const d = new Date(`${date}T18:00:00`);
+            if (!isNaN(d.getTime())) {
+              cache.set(date, d.getTime());
+              lastKnownTs = d.getTime();
+              backfill = 0;
+              return d.getTime();
+            }
+          } else {
+            const t = cache.get(date)!;
+            lastKnownTs = t;
+            return t;
+          }
+        }
+        const ts = lastKnownTs - (backfill + 1) * DAY;
+        backfill++;
+        return ts;
+      };
+    })();
 
     await db.transaction(
       "rw",
       [db.workoutSessions, db.sessionExercises, db.workoutSets],
       async () => {
-        await db.workoutSessions.add({
-          id: sessionId,
-          name: importResult.sessionName,
-          gymId,
-          status: "completed",
-          source: "manual",
-          focus: [],
-          estimatedMinutes: importResult.exercises.reduce((t, e) => t + e.sets.length * 3, 0),
-          startedAt: now - 3600000,
-          completedAt: now,
-          createdAt: now,
-          updatedAt: now,
-          notes: importResult.notes,
-        });
+        for (const session of importResult.sessions) {
+          const sessionId = crypto.randomUUID();
+          const completedAt = tsForSession(session.date);
 
-        for (const ex of importResult.exercises) {
-          const seId = crypto.randomUUID();
-          await db.sessionExercises.add({
-            id: seId,
-            sessionId,
-            exerciseId: ex.exerciseId,
-            order: ex.order,
+          await db.workoutSessions.add({
+            id: sessionId,
+            name: session.sessionName,
+            gymId,
             status: "completed",
-            targetSets: ex.sets.length,
+            source: "manual",
+            focus: [],
+            estimatedMinutes: session.exercises.reduce((t, e) => t + e.sets.length * 3, 0),
+            startedAt: completedAt - 3600000,
+            completedAt,
             createdAt: now,
             updatedAt: now,
+            notes: importResult.notes,
           });
 
-          for (const set of ex.sets) {
-            await db.workoutSets.add({
-              id: crypto.randomUUID(),
+          for (const ex of session.exercises) {
+            const seId = crypto.randomUUID();
+            await db.sessionExercises.add({
+              id: seId,
               sessionId,
-              sessionExerciseId: seId,
               exerciseId: ex.exerciseId,
-              setNumber: set.setNumber,
-              setType: "working",
-              weightKg: set.weightKg,
-              reps: set.reps,
-              completedAt: now,
+              order: ex.order,
+              status: "completed",
+              targetSets: ex.sets.length,
+              createdAt: now,
               updatedAt: now,
             });
+
+            for (const set of ex.sets) {
+              await db.workoutSets.add({
+                id: crypto.randomUUID(),
+                sessionId,
+                sessionExerciseId: seId,
+                exerciseId: ex.exerciseId,
+                setNumber: set.setNumber,
+                setType: "working",
+                weightKg: set.weightKg,
+                reps: set.reps,
+                completedAt,
+                updatedAt: now,
+              });
+            }
           }
         }
       }
@@ -1287,7 +1320,10 @@ export default function TodayPage() {
           {importState === "success" && importResult && (
             <div className="space-y-4">
               <div>
-                <h2 className="text-lg font-display font-bold text-foreground">{importResult.sessionName}</h2>
+                <h2 className="text-lg font-display font-bold text-foreground">
+                  {importResult.sessions.length} session
+                  {importResult.sessions.length > 1 ? "s" : ""} found
+                </h2>
                 {importResult.source && (
                   <p className="text-xs text-muted-foreground mt-0.5">From: {importResult.source}</p>
                 )}
@@ -1297,24 +1333,54 @@ export default function TodayPage() {
                 <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-2">
                   <AlertCircleIcon className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
                   <p className="text-xs text-amber-700 dark:text-amber-400">
-                    Low parsing confidence. Please review the exercises below before saving.
+                    Low parsing confidence. Please review the sessions below before saving.
                   </p>
                 </div>
               )}
 
-              <div className="space-y-2 max-h-56 overflow-y-auto">
-                {importResult.exercises.map((ex, i) => {
-                  const def = exercises.find((e) => e.id === ex.exerciseId);
+              <div className="space-y-3 max-h-64 overflow-y-auto">
+                {importResult.sessions.map((session, si) => {
+                  const sessionDate = session.date
+                    ? new Date(`${session.date}T00:00:00`).toLocaleDateString(undefined, {
+                        weekday: "short",
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })
+                    : "Date unknown";
+                  const lowConf = (session.confidence ?? importResult.confidence) < 0.7;
                   return (
-                    <div key={i} className="p-3 bg-muted/50 rounded-xl">
-                      <p className="font-medium text-foreground text-sm">
-                        {i + 1}. {def?.name ?? ex.exerciseId}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {ex.sets.map((s) =>
-                          `${s.weightKg ? s.weightKg + "kg " : ""}${s.reps ? s.reps + " reps" : ""}`
-                        ).join(" | ")}
-                      </p>
+                    <div key={si} className="p-3 bg-muted/50 rounded-xl">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="font-medium text-foreground text-sm">
+                          {session.sessionName}
+                        </p>
+                        <span className="text-[11px] text-muted-foreground shrink-0">{sessionDate}</span>
+                      </div>
+                      {lowConf && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+                          Low confidence — review below
+                        </p>
+                      )}
+                      <div className="mt-1.5 space-y-1">
+                        {session.exercises.map((ex) => {
+                          const def = exercises.find((e) => e.id === ex.exerciseId);
+                          return (
+                            <p key={ex.exerciseId + ex.order} className="text-xs text-muted-foreground">
+                              {def?.name ?? ex.exerciseId}
+                              <span className="text-muted-foreground/70">
+                                {" "}
+                                —{" "}
+                                {ex.sets
+                                  .map((s) =>
+                                    `${s.weightKg ? s.weightKg + "kg " : ""}${s.reps ? s.reps + " reps" : ""}`
+                                  )
+                                  .join(" | ")}
+                              </span>
+                            </p>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })}
@@ -1325,7 +1391,8 @@ export default function TodayPage() {
                   Cancel
                 </Button>
                 <Button className="flex-1" onClick={handleConfirmImport}>
-                  Save {importResult.exercises.length} exercises
+                  Save {importResult.sessions.length} session
+                  {importResult.sessions.length > 1 ? "s" : ""}
                 </Button>
               </div>
             </div>

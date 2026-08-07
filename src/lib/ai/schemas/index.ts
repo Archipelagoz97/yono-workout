@@ -321,30 +321,35 @@ export const ProposeMemoryRequestSchema = z.object({
 // ─────────────────────────────────────────────────────────
 
 export const BulkImportLogRequestSchema = z.object({
-  text: z.string().min(1).max(3000),
+  text: z.string().min(1).max(8000),
+});
+
+export const BulkImportExerciseSchema = z.object({
+  exerciseId: z.string().min(1),
+  order: z.number().int().positive(),
+  sets: z.array(
+    z.object({
+      setNumber: z.number().int().positive(),
+      weightKg: z.number().nonnegative().optional(),
+      reps: z.number().int().nonnegative().optional(),
+    })
+  ),
+});
+
+export const BulkImportSessionSchema = z.object({
+  sessionName: z.string().min(1).max(80),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  confidence: z.number().min(0).max(1).optional(),
+  exercises: z.array(BulkImportExerciseSchema).min(1).max(15),
 });
 
 export const BulkImportLogResponseSchema = z.object({
-  sessionName: z.string().min(1).max(80),
   source: z.string().max(200).optional(),
-  exercises: z
-    .array(
-      z.object({
-        exerciseId: z.string().min(1),
-        order: z.number().int().positive(),
-        sets: z.array(
-          z.object({
-            setNumber: z.number().int().positive(),
-            weightKg: z.number().nonnegative().optional(),
-            reps: z.number().int().nonnegative().optional(),
-          })
-        ),
-      })
-    )
-    .min(1)
-    .max(15),
+  sessions: z.array(BulkImportSessionSchema).min(1).max(30),
   confidence: z.number().min(0).max(1),
   notes: z.string().max(300).optional(),
 });
 
+export type BulkImportSession = z.infer<typeof BulkImportSessionSchema>;
+export type BulkImportExercise = z.infer<typeof BulkImportExerciseSchema>;
 export type BulkImportLogResult = z.infer<typeof BulkImportLogResponseSchema>;
