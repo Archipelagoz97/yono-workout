@@ -15,6 +15,7 @@ import {
   Undo2Icon,
   BookmarkIcon,
   Link2Icon,
+  XIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -48,6 +49,13 @@ const REST_DEFAULTS: Record<string, number> = {
 };
 
 const SWIPE_THRESHOLD = 50;
+
+type UndoableSet = {
+  id: string;
+  exerciseIndex: number;
+  setNumber: number;
+  setType: "warmup" | "working";
+};
 
 function getVolumeAchievement(totalKg: number): { emoji: string; label: string; copy: string } {
   if (totalKg >= 1000) {
@@ -106,12 +114,8 @@ export default function WorkoutPage() {
   const [showCompleteDialog, setShowCompleteDialog] = useState(false);
   const [isFinishing, setIsFinishing] = useState(false);
   const [detailsExId, setDetailsExId] = useState<string | null>(null);
-  const [lastSavedSet, setLastSavedSet] = useState<{
-    id: string;
-    exerciseIndex: number;
-    setNumber: number;
-    warmup: boolean;
-  } | null>(null);
+  const [undoStack, setUndoStack] = useState<UndoableSet[]>([]);
+  const [showRpeInfo, setShowRpeInfo] = useState(false);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [templateName, setTemplateName] = useState("");
   const [templateSaved, setTemplateSaved] = useState(false);
@@ -122,7 +126,6 @@ export default function WorkoutPage() {
   const [restTotal, setRestTotal] = useState(90);
   const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const undoBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartX = useRef<number | null>(null);
 
   // Live data
@@ -257,9 +260,7 @@ export default function WorkoutPage() {
     setSetType("working");
     setDurationSeconds(0);
     setDistanceMeters(0);
-    setLastSavedSet(null);
     if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
-    if (undoBannerTimerRef.current) clearTimeout(undoBannerTimerRef.current);
     unlockAudio();
   }, [currentSessionExercise?.id]);
 
@@ -320,6 +321,14 @@ export default function WorkoutPage() {
       groupMembers[groupMembers.length - 1].id === currentSessionExercise.id
     : true;
 
+  const isLastExercise = exerciseIndex >= totalExercises - 1;
+  const isFinalSet =
+    isStrengthType &&
+    setType === "working" &&
+    isLastExercise &&
+    isLastInGroup &&
+    workingSetsDone + 1 === targetSets;
+
   // Get exercise history
   const exerciseHistory = useLiveQuery(
     () =>
@@ -355,20 +364,11 @@ export default function WorkoutPage() {
     }
   };
 
-  const clearUndoBannerTimer = () => {
-    if (undoBannerTimerRef.current) {
-      clearTimeout(undoBannerTimerRef.current);
-      undoBannerTimerRef.current = null;
-    }
-  };
-
   const goToExercise = (index: number) => {
     if (index < 0 || index >= totalExercises) return;
     clearAdvanceTimer();
-    clearUndoBannerTimer();
     setExerciseIndex(index);
     setSetNumber(1);
-    setLastSavedSet(null);
   };
 
   const goPrev = () => {
@@ -460,17 +460,16 @@ export default function WorkoutPage() {
 
       await db.workoutSets.add(setRecord);
 
-      // Track for undo
-      setLastSavedSet({
-        id: setRecord.id,
-        exerciseIndex,
-        setNumber,
-        warmup: setType === "warmup",
-      });
-      clearUndoBannerTimer();
-      undoBannerTimerRef.current = setTimeout(() => {
-        setLastSavedSet(null);
-      }, 6000);
+      // Track for multi-level undo
+      setUndoStack((prev) => [
+        ...prev,
+        {
+          id: setRecord.id,
+          exerciseIndex,
+          setNumber,
+          setType,
+        },
+      ]);
 
       // Build feedback message with the actual set details.
       const setLabel = setType === "warmup" ? `Warmup ${setNumber}` : `Set ${setNumber}`;
@@ -570,19 +569,20 @@ export default function WorkoutPage() {
   ]);
 
   const handleUndoLastSet = async () => {
-    if (!lastSavedSet) return;
-    const setToDelete = await db.workoutSets.get(lastSavedSet.id).catch(() => undefined);
+    if (undoStack.length === 0) return;
+    const last = undoStack[undoStack.length - 1];
+    const setToDelete = await db.workoutSets.get(last.id).catch(() => undefined);
     if (setToDelete) {
-      await db.workoutSets.delete(lastSavedSet.id);
+      await db.workoutSets.delete(last.id);
     }
     // Stop rest timer
     setRestActive(false);
     setRestRemaining(0);
     // Revert position (works whether or not auto-advance fired)
     clearAdvanceTimer();
-    goToExercise(lastSavedSet.exerciseIndex);
-    setSetNumber(lastSavedSet.setNumber);
-    setLastSavedSet(null);
+    goToExercise(last.exerciseIndex);
+    setSetNumber(last.setNumber);
+    setUndoStack((prev) => prev.slice(0, -1));
     setSavedCopy("Set removed.");
     setYonoState("idle");
   };
@@ -1101,12 +1101,20 @@ export default function WorkoutPage() {
           {/* RPE control */}
           {isStrengthType && (
             <div className="mb-5">
-              <label className="text-sm font-medium text-foreground block mb-2">
-                RPE{" "}
+              <div className="flex items-center gap-2 mb-2">
+                <label className="text-sm font-medium text-foreground">RPE</label>
                 <span className="text-xs text-muted-foreground font-normal">
                   {rpe > 0 ? `${rpe}/10` : "— optional"}
                 </span>
-              </label>
+                <button
+                  onClick={() => setShowRpeInfo(true)}
+                  aria-label="What is RPE?"
+                  className="inline-flex items-center gap-1 rounded-full bg-muted/60 border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <InfoIcon className="w-3.5 h-3.5" />
+                  What&apos;s RPE?
+                </button>
+              </div>
               <div className="flex flex-wrap gap-1.5 justify-center">
                 {[6, 7, 8, 9, 10].map((v) => (
                   <button
@@ -1132,7 +1140,9 @@ export default function WorkoutPage() {
             onClick={handleCompleteSet}
             disabled={isSaving || restActive}
             size="lg"
-            className="w-full h-14 text-base font-bold rounded-2xl shadow-md"
+            className={`w-full h-14 text-base font-bold rounded-2xl shadow-md ${
+              isFinalSet ? "bg-accent text-accent-foreground hover:bg-accent/90" : ""
+            }`}
           >
             {isSaving ? (
               "Saving..."
@@ -1141,6 +1151,11 @@ export default function WorkoutPage() {
                 <TimerIcon className="w-5 h-5 mr-2" />
                 Resting... ({restRemaining}s)
               </>
+            ) : isFinalSet ? (
+              <>
+                <FlagIcon className="w-5 h-5 mr-2" />
+                Complete Last Set
+              </>
             ) : (
               <>
                 <CheckIcon className="w-5 h-5 mr-2" />
@@ -1148,10 +1163,15 @@ export default function WorkoutPage() {
               </>
             )}
           </Button>
+          {isFinalSet && !restActive && (
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              This is the last set — you&apos;re almost done!
+            </p>
+          )}
 
           {/* Undo last set */}
           <AnimatePresence>
-            {lastSavedSet && !restActive && (
+            {undoStack.length > 0 && !restActive && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -1165,7 +1185,9 @@ export default function WorkoutPage() {
                   className="w-full h-10 text-xs font-medium rounded-xl text-muted-foreground"
                 >
                   <Undo2Icon className="w-4 h-4 mr-1.5" />
-                  Undo last set
+                  {undoStack.length > 1
+                    ? `Undo last set (${undoStack.length})`
+                    : "Undo last set"}
                 </Button>
               </motion.div>
             )}
@@ -1292,65 +1314,123 @@ export default function WorkoutPage() {
 
       {/* Workout complete overlay */}
       <Dialog open={showCompleteDialog} onOpenChange={setShowCompleteDialog}>
-        <DialogContent className="max-w-sm p-6 text-center">
-          <DialogHeader className="mb-4">
-            <DialogTitle className="text-2xl font-display">Workout Complete! 🎉</DialogTitle>
-          </DialogHeader>
-          <div className="flex justify-center mb-6">
-            <div className="w-40 h-40">
+        <DialogContent
+          showCloseButton={false}
+          className="block w-[calc(100vw-32px)] max-w-[440px] sm:max-w-[440px] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-[24px] p-0 gap-0"
+        >
+          <button
+            id="btn-close-complete"
+            onClick={() => setShowCompleteDialog(false)}
+            aria-label="Close"
+            className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <XIcon className="h-5 w-5" />
+            <span className="sr-only">Close</span>
+          </button>
+
+          <div className="flex w-full flex-col items-center px-7 pb-6 pt-6">
+            <DialogTitle className="w-full text-center text-2xl font-display font-bold text-foreground leading-tight">
+              Workout Complete! 🎉
+            </DialogTitle>
+
+            <div className="mt-6 flex h-40 w-40 items-center justify-center">
               <YonoAnimation state="workout_complete" animationFamily="core_hold" />
             </div>
-          </div>
-          <div className="mb-6 space-y-2">
-            <div className="text-5xl">{getVolumeAchievement(totalVolumeKg).emoji}</div>
-            <p className="font-display text-lg font-bold text-primary">
-              {getVolumeAchievement(totalVolumeKg).label}
-            </p>
-            <DialogDescription className="text-base mx-auto max-w-xs">
-              {getVolumeAchievement(totalVolumeKg).copy}
-            </DialogDescription>
-            {totalVolumeKg >= 100 && (
-              <p className="text-sm text-muted-foreground">
-                {Math.round(totalVolumeKg).toLocaleString("id-ID")} kg diangkat hari ini.
-              </p>
-            )}
-          </div>
 
-          {/* Exercise summary */}
-          {exerciseSummary.length > 0 && (
-            <div className="mb-6 text-left">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2.5">
-                Kamu ngangkat
-              </p>
-              <div className="space-y-2 max-h-52 overflow-y-auto pr-1 scrollbar-none">
-                {exerciseSummary.map((e) => {
-                  let detail = `${e.setCount} set × ${e.totalReps} reps`;
-                  if (e.durationBased && e.totalDurationSeconds > 0) {
-                    const mins = Math.floor(e.totalDurationSeconds / 60);
-                    const secs = e.totalDurationSeconds % 60;
-                    detail = `${e.setCount} set × ${mins}:${secs.toString().padStart(2, "0")}`;
-                  } else if (e.avgWeightKg) {
-                    detail = `${e.setCount} set × ${e.totalReps} reps × ${formatWeight(e.avgWeightKg, weightUnit)}`;
-                  }
-                  return (
-                    <div
-                      key={e.name}
-                      className="flex items-center justify-between gap-3 p-2.5 bg-muted/50 rounded-xl"
-                    >
-                      <span className="text-sm font-medium text-foreground truncate">{e.name}</span>
-                      <span className="text-sm font-semibold text-primary whitespace-nowrap font-mono">
-                        {detail}
-                      </span>
-                    </div>
-                  );
-                })}
+            <div className="mt-5 w-full max-w-[320px] text-center">
+              <div className="text-5xl leading-none">
+                {getVolumeAchievement(totalVolumeKg).emoji}
               </div>
+              <p className="mt-2 font-display text-lg font-bold text-primary leading-snug">
+                {getVolumeAchievement(totalVolumeKg).label}
+              </p>
+              <DialogDescription className="mx-auto mt-2.5 max-w-[320px] text-base leading-relaxed">
+                {getVolumeAchievement(totalVolumeKg).copy}
+              </DialogDescription>
+              {totalVolumeKg >= 100 && (
+                <p className="mt-2.5 text-sm text-muted-foreground">
+                  {Math.round(totalVolumeKg).toLocaleString("id-ID")} kg diangkat hari ini.
+                </p>
+              )}
             </div>
-          )}
 
-          <Button onClick={() => router.push("/today")} className="w-full h-12 text-lg rounded-xl">
-            Back to Dashboard
-          </Button>
+            {/* Exercise summary */}
+            {exerciseSummary.length > 0 && (
+              <div className="mt-7 w-full">
+                <p className="mb-2.5 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Kamu ngangkat
+                </p>
+                <div className="max-h-52 space-y-2.5 overflow-y-auto pr-1 scrollbar-none">
+                  {exerciseSummary.map((e) => {
+                    let detail = `${e.setCount} set × ${e.totalReps} reps`;
+                    if (e.durationBased && e.totalDurationSeconds > 0) {
+                      const mins = Math.floor(e.totalDurationSeconds / 60);
+                      const secs = e.totalDurationSeconds % 60;
+                      detail = `${e.setCount} set × ${mins}:${secs.toString().padStart(2, "0")}`;
+                    } else if (e.avgWeightKg) {
+                      detail = `${e.setCount} set × ${e.totalReps} reps × ${formatWeight(e.avgWeightKg, weightUnit)}`;
+                    }
+                    return (
+                      <div
+                        key={e.name}
+                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl bg-muted/50 px-3.5 py-3"
+                      >
+                        <span className="min-w-0 text-sm font-medium text-foreground leading-snug">
+                          {e.name}
+                        </span>
+                        <span className="shrink-0 whitespace-nowrap text-sm font-semibold text-primary tabular-nums">
+                          {detail}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <Button
+              onClick={() => router.push("/today")}
+              className="mt-8 h-[52px] w-full rounded-[14px] text-base font-bold shadow-md"
+            >
+              Back to Dashboard
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* RPE explanation */}
+      <Dialog open={showRpeInfo} onOpenChange={setShowRpeInfo}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>What is RPE?</DialogTitle>
+            <DialogDescription>
+              RPE (Rate of Perceived Exertion) scores how hard a set felt on a 1–10 scale.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3">
+              <span className="shrink-0 font-semibold text-accent">8</span>
+              <span className="text-sm text-foreground">
+                ~2 reps left in reserve — you could have done 2 more.
+              </span>
+            </div>
+            <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3">
+              <span className="shrink-0 font-semibold text-accent">9</span>
+              <span className="text-sm text-foreground">
+                1 rep left in reserve — very hard, near failure.
+              </span>
+            </div>
+            <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3">
+              <span className="shrink-0 font-semibold text-accent">10</span>
+              <span className="text-sm text-foreground">
+                All-out max effort — no reps left at all.
+              </span>
+            </div>
+          </div>
+          <DialogDescription>
+            Yono uses your RPE to pick a smarter weight next session. It&apos;s optional — skip it
+            and nothing changes.
+          </DialogDescription>
         </DialogContent>
       </Dialog>
 

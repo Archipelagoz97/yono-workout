@@ -1,6 +1,42 @@
 # Yono Workout — Project Status
 
-## Latest: Weight-Unit Precision Fix (2026-08-07)
+## Latest: Workout UX — final-set button, RPE explainer, multi-undo, Complete-modal layout (2026-08-07)
+
+### 1. Final-set Complete button
+On the last working set of the last exercise (non-superset last-in-group, `workingSetsDone + 1 === targetSets`)
+the Complete button switches to accent-orange styling, label **"Complete Last Set"** (Flag icon), and a caption
+"This is the last set — you're almost done!". Purely presentational — completion logic untouched.
+
+### 2. RPE explainer popup
+"What's RPE?" pill next to the RPE control opens a dialog explaining the 8/9/10 anchors
+(reps in reserve) and that Yono uses RPE for next-session weight suggestions.
+
+### 3. Multi-level undo
+Replaced the single `lastSavedSet` + 6s auto-clear with a persistent `undoStack`. Every completed set
+(warmup/working) is pushed; the Undo button deletes the most recent set, reverts exercise/set position,
+and stays available (`Undo last set (N)`) until the stack is empty. Works across exercises.
+
+### 4. Workout Complete modal layout
+- Kept mathematically centered (`calc(100vw-32px)` / `max-w-440px`, `max-h-[calc(100dvh-32px)]` + scroll).
+- Title centered independently; close button is absolute top-right, 44×44px touch target.
+- Fixed spacing rhythm (title→Yono 24, Yono→icon 20, icon→title 8, title→desc 10, desc→volume 10,
+  volume→summary 28, rows 10, list→button 32, button→bottom 24).
+- Achievement text in centered `max-w-[320px]` block; summary rows use
+  `grid-cols-[minmax(0,1fr)_auto]` + `tabular-nums` so metadata never overflows.
+- Back to Dashboard: full-width 52px, rounded 14px, aligned with rows.
+
+### Files changed
+- `src/app/workout/[sessionId]/page.tsx` (undo stack, RPE dialog, final-set button, complete modal).
+
+### Checks
+- `npx tsc --noEmit` clean; `npm run build` clean (18 routes); `npm run lint` unchanged at the
+  47-problem pre-existing baseline.
+- Playwright (prod build, chromium): EX1 normal button, EX2 accent "Complete Last Set" + caption;
+  multi-undo (2 sets → undo×2 → back to exercise 1, button gone); complete modal at 320/390/430 —
+  title center delta 0, no horizontal overflow, close 44px, modal scrolls, summary rows don't overflow.
+  Bodyweight exercises (pull-up/chin-up/assisted) correctly omitted from the weight summary (no weightKg).
+
+## Previous: Weight-Unit Precision Fix (2026-08-07)
 
 Fixed a display/round-trip bug on the workout screen: entering `5 lb` and completing a set
 re-displayed `5.004493351486 lb` as the next entered weight.
