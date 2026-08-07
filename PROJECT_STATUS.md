@@ -1,6 +1,36 @@
 # Yono Workout — Project Status
 
-## Latest: /today Redesign — Premium Calm Dashboard (2026-08-07)
+## Latest: Weight-Unit Precision Fix (2026-08-07)
+
+Fixed a display/round-trip bug on the workout screen: entering `5 lb` and completing a set
+re-displayed `5.004493351486 lb` as the next entered weight.
+
+### Root cause
+`handleCompleteSet` stored canonical kg rounded to 2 decimals
+(`Math.round(displayToKg(weight, unit) * 100) / 100`) → 5 lb became `2.27 kg`. The
+"pre-fill from last set" effect then set `weight = kgToDisplay(2.27, "lb")` = `5.004493351486`
+and the weight control rendered that raw float.
+
+### Fix
+- Store full-precision canonical kg (`displayToKg(weight, weightUnit)`), no premature rounding —
+  round-trip 5 lb → 2.26796185 kg → exactly 5 lb.
+- Round display values to 2 dp whenever `weight` is derived from kg (suggestion init + last-set
+  pre-fill) so the control never shows a raw float. Unit toggle already rounded to 2 dp.
+- Old records stored as 2.27 kg self-heal on display (rounded to "5 lb") and re-store exactly
+  on next completion.
+
+### Files changed
+- `src/app/workout/[sessionId]/page.tsx` — store full-precision kg (both `weightKg` and
+  `assistanceWeightKg`), round display on suggestion init (line ~250) and pre-fill (line ~270).
+
+### Checks
+- Node simulation: 5 lb → stored 2.267961850050177 kg → displays 5 lb across complete /
+  pre-fill / next set / refresh; unit toggle 5 lb ↔ 5 kg ↔ 5 lb stable; 20 kg suggestion
+  shows 44.09 lb and round-trips cleanly.
+- `npm run build` — clean (18 routes). `npm run lint` — unchanged at the 47-problem
+  pre-existing baseline (workout-page setState-in-effect errors are not regressions).
+
+## Previous: /today Redesign — Premium Calm Dashboard (2026-08-07)
 
 Complete visual/UX redesign of the `/today` dashboard into a calm, premium mobile layout.
 All generation logic (DeepSeek, offline fallback, IndexedDB context), active-workout restore,

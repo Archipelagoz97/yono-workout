@@ -247,7 +247,7 @@ export default function WorkoutPage() {
     if (!currentSessionExercise) return;
     const suggested = currentSessionExercise.suggestedWeightKg;
     if (suggested) {
-      setWeight(kgToDisplay(suggested, weightUnit));
+      setWeight(Math.round(kgToDisplay(suggested, weightUnit) * 100) / 100);
     } else {
       setWeight(0);
     }
@@ -267,7 +267,7 @@ export default function WorkoutPage() {
   useEffect(() => {
     if (!completedSets || completedSets.length === 0) return;
     const lastSet = completedSets[completedSets.length - 1];
-    if (lastSet.weightKg) setWeight(kgToDisplay(lastSet.weightKg, weightUnit));
+    if (lastSet.weightKg) setWeight(Math.round(kgToDisplay(lastSet.weightKg, weightUnit) * 100) / 100);
     if (lastSet.reps) setReps(lastSet.reps);
     if (lastSet.durationSeconds) setDurationSeconds(lastSet.durationSeconds);
     if (lastSet.distanceMeters) setDistanceMeters(lastSet.distanceMeters);
@@ -436,12 +436,12 @@ export default function WorkoutPage() {
         if (measurementType === "assisted_weight_reps") {
           setRecord.assistanceWeightKg =
             weight > 0
-              ? Math.round(displayToKg(weight, weightUnit) * 100) / 100
+              ? displayToKg(weight, weightUnit)
               : undefined;
         } else {
           setRecord.weightKg =
             weight > 0
-              ? Math.round(displayToKg(weight, weightUnit) * 100) / 100
+              ? displayToKg(weight, weightUnit)
               : undefined;
         }
       }
